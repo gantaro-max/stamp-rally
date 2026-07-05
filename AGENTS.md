@@ -25,19 +25,34 @@ Codex はこのプロジェクトにおいて **コーダー・テスター・�
 ```
 1. Claude から実装指示書を受け取る
         ↓
-2. 実装指示書と設計書（docs/requirements.md / docs/architecture.md / docs/api.md / docs/database.md）を読み、不明点があれば着手前に確認する
+2. `main` から `feature/<機能名>` ブランチを作成する（下記「ブランチ運用」参照）
         ↓
-3. 指示書の「テストケース」ごとにTDDサイクルを回す（下記「TDD（Red-Green-Refactor）」参照）
-   3-1. Red:      失敗するテストを書き、実際に失敗することを確認する
-   3-2. Green:    テストを通す最小限の実装を書く
-   3-3. Refactor: テストが通ったままコードを整理する
+3. 実装指示書と設計書（docs/requirements.md / docs/architecture.md / docs/api.md / docs/database.md）を読み、不明点があれば着手前に確認する
         ↓
-4. すべてのテストケースについて 3 を繰り返し、`cargo test` が全体で通ることを確認する
+4. 指示書の「テストケース」ごとにTDDサイクルを回す（下記「TDD（Red-Green-Refactor）」参照）
+   4-1. Red:      失敗するテストを書き、実際に失敗することを確認する
+   4-2. Green:    テストを通す最小限の実装を書く
+   4-3. Refactor: テストが通ったままコードを整理する
         ↓
-5. 複数サブエージェントによる一次レビューを実施する（後述、TDDサイクルが守られているかも確認する）
+5. すべてのテストケースについて 4 を繰り返し、`cargo test` が全体で通ることを確認する
         ↓
-6. レビュー結果と実装内容を Claude へ報告する
+6. 複数サブエージェントによる一次レビューを実施する（後述、TDDサイクルが守られているかも確認する）
+        ↓
+7. featureブランチをpushし、Pull Requestを作成する（`gh pr create`）
+        ↓
+8. レビュー結果とPRのURLを Claude へ報告する
 ```
+
+---
+
+## ブランチ運用 — 必須
+
+- `main` への直接コミット・直接pushは禁止。作業は必ず `main` から作成した `feature/<機能名>` ブランチで行う
+  - ブランチ名は対応する実装指示書のファイル名と揃える（例: `instructions/initial-setup.md` → `feature/initial-setup`）
+- 実装が完了し、TDDサイクルと一次レビューを終えたらブランチをpushし、`main` 宛にPull Requestを作成する
+- マージは **Squash merge** で行う（ブランチ内のRed/Green/Refactorの細かいコミットは、`main` 上では1つの変更にまとめる）
+- マージ後、featureブランチは削除する
+- 最終的なマージ判断はClaudeの最終レビュー通過後に行う（[CLAUDE.md](CLAUDE.md) 参照）
 
 ---
 
