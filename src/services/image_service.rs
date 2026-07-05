@@ -1,4 +1,8 @@
+use std::io::Cursor;
+
 pub const MAX_UPLOAD_BYTES: usize = 5 * 1024 * 1024;
+pub const MAX_SOURCE_DIMENSION: u32 = 4096;
+pub const MAX_SOURCE_PIXELS: u64 = 16_000_000;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ImageError {
@@ -14,11 +18,21 @@ pub fn process_upload(bytes: &[u8]) -> Result<Vec<u8>, ImageError> {
     }
 
     let format = match image::guess_format(bytes) {
-        Ok(image::ImageFormat::Jpeg | image::ImageFormat::Png) => {
-            image::guess_format(bytes).unwrap()
-        }
+        Ok(image::ImageFormat::Jpeg | image::ImageFormat::Png) => image::guess_format(bytes).unwrap(),
         _ => return Err(ImageError::InvalidFormat),
     };
+
+    let (width, height) = image::ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|_| ImageError::DecodeFailed)?
+        .into_dimensions()
+        .map_err(|_| ImageError::DecodeFailed)?;
+    if width > MAX_SOURCE_DIMENSION
+        || height > MAX_SOURCE_DIMENSION
+        || u64::from(width) * u64::from(height) > MAX_SOURCE_PIXELS
+    {
+        return Err(ImageError::DimensionsTooLarge);
+    }
 
     let image =
         image::load_from_memory_with_format(bytes, format).map_err(|_| ImageError::DecodeFailed)?;
