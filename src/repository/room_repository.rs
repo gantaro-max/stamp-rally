@@ -22,6 +22,7 @@ pub async fn count(pool: &MySqlPool, event_id: i32) -> Result<i64, sqlx::Error> 
     row.try_get("count")
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn insert(
     pool: &MySqlPool,
     event_id: i32,
@@ -147,9 +148,13 @@ pub async fn find_by_id(pool: &MySqlPool, id: i32) -> Result<Option<Room>, sqlx:
 #[cfg(test)]
 mod tests {
     async fn seed_event(pool: &sqlx::MySqlPool) -> i32 {
-        crate::services::auth_service::seed_admin_event_if_empty(pool, "admin-secret", "Stamp Rally")
-            .await
-            .unwrap();
+        crate::services::auth_service::seed_admin_event_if_empty(
+            pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
         crate::repository::event_repository::find_singleton(pool)
             .await
             .unwrap()
