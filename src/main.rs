@@ -30,6 +30,8 @@ async fn main() {
             process::exit(1);
         });
 
+    seed_admin_event_or_exit(&pool).await;
+
     let app = app_router(pool);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
@@ -45,6 +47,34 @@ async fn main() {
         eprintln!("server error: {err}");
         process::exit(1);
     });
+}
+
+async fn seed_admin_event_or_exit(pool: &MySqlPool) {
+    let event_count = repository::event_repository::count(pool)
+        .await
+        .unwrap_or_else(|err| {
+            eprintln!("failed to count events: {err}");
+            process::exit(1);
+        });
+
+    if event_count > 0 {
+        return;
+    }
+
+    let admin_password = env::var("ADMIN_PASSWORD")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| {
+            eprintln!("ADMIN_PASSWORD must be set when events table is empty");
+            process::exit(1);
+        });
+
+    services::auth_service::seed_admin_event_if_empty(pool, &admin_password, "Stamp Rally")
+        .await
+        .unwrap_or_else(|err| {
+            eprintln!("failed to seed initial event: {err}");
+            process::exit(1);
+        });
 }
 
 fn app_router(pool: MySqlPool) -> Router {
