@@ -221,4 +221,62 @@ mod tests {
 
         assert_eq!(count, 1);
     }
+
+    #[sqlx::test]
+    async fn update_replaces_existing_image(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let room_id = super::create(
+            &pool,
+            event_id,
+            CreateRoomInput {
+                room_name: "Image Room".to_string(),
+                quest_text: "Quest".to_string(),
+                answer: None,
+                hint_msg: None,
+                image_bytes: Some(png_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        let old_image_id = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .image_id
+            .unwrap();
+
+        super::update(
+            &pool,
+            room_id,
+            super::UpdateRoomInput {
+                room_name: "Updated".to_string(),
+                quest_text: "Updated Quest".to_string(),
+                answer: None,
+                hint_msg: None,
+                image_bytes: Some(png_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let room = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let new_image_id = room.image_id.unwrap();
+        let old_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
+            .bind(old_image_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let new_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
+            .bind(new_image_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        assert_ne!(new_image_id, old_image_id);
+        assert_eq!(old_count, 0);
+        assert_eq!(new_count, 1);
+    }
 }
