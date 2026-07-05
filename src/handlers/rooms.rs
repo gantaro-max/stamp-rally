@@ -144,6 +144,10 @@ pub async fn add(
     };
 
 
+    if !csrf_service::verify_token(&session, form.csrf_token.as_deref().unwrap_or("")).await {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
     let values = form.values();
     let input = room_service::CreateRoomInput {
         room_name: form.room_name,
