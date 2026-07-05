@@ -129,4 +129,29 @@ mod tests {
         assert!(matches!(err, RoomError::AnswerRequired));
         assert_eq!(crate::repository::room_repository::count(&pool, event_id).await.unwrap(), 0);
     }
+
+    #[sqlx::test]
+    async fn create_ignores_answer_fields_when_answer_check_disabled(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let room_id = super::create(
+            &pool,
+            event_id,
+            CreateRoomInput {
+                room_name: "Room".to_string(),
+                quest_text: "Quest".to_string(),
+                answer: Some("submitted".to_string()),
+                hint_msg: Some("hint".to_string()),
+                image_bytes: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let room = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(room.answer, None);
+        assert_eq!(room.hint_msg, None);
+    }
 }
