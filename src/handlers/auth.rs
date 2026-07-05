@@ -24,6 +24,11 @@ pub struct LoginForm {
     csrf_token: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct LogoutForm {
+    csrf_token: String,
+}
+
 pub async fn login_form(session: Session) -> Response {
     render_login(session, None).await
 }
@@ -52,7 +57,15 @@ pub async fn login(
     }
 }
 
-pub async fn logout() -> Response {
+pub async fn logout(session: Session, Form(form): Form<LogoutForm>) -> Response {
+    if !csrf_service::verify_token(&session, &form.csrf_token).await {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    if session.flush().await.is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
     redirect_to("/auth/login")
 }
 
