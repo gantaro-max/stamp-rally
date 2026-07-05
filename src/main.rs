@@ -1,8 +1,9 @@
 mod handlers;
+mod middleware;
 mod repository;
 mod services;
 
-use axum::{Router, routing::get};
+use axum::{Router, middleware as axum_middleware, routing::get};
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
 use std::{env, net::SocketAddr, process};
 use time::Duration;
@@ -47,12 +48,19 @@ fn app_router(pool: MySqlPool) -> Router {
     let session_layer = SessionManagerLayer::new(MemoryStore::default())
         .with_expiry(Expiry::OnInactivity(Duration::hours(12)));
 
+    let admin_router = Router::new()
+        .route("/dashboard", get(handlers::admin::dashboard))
+        .route_layer(axum_middleware::from_fn(
+            middleware::require_admin::require_admin,
+        ));
+
     Router::new()
         .route("/health", get(handlers::health::health))
         .route(
             "/auth/login",
             get(handlers::auth::login_form).post(handlers::auth::login),
         )
+        .nest("/admin", admin_router)
         .with_state(pool)
         .layer(session_layer)
 }
