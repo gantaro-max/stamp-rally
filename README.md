@@ -14,6 +14,8 @@ LINE Bot を使った建物内スタンプラリーアプリ。1建物・最大1
 | [docs/operator-guide.md](docs/operator-guide.md) | 運営マニュアル |
 | [CLAUDE.md](CLAUDE.md) | Claude（PM）の役割・ワークフロー |
 | [AGENTS.md](AGENTS.md) | Codex の役割・コーディング規約 |
+| [SECURITY.md](SECURITY.md) | セキュリティポリシー |
+| [CHANGELOG.md](CHANGELOG.md) | 変更履歴 |
 
 ## 技術スタック
 
