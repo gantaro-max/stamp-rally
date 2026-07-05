@@ -19,6 +19,10 @@ pub fn process_upload(bytes: &[u8]) -> Result<Vec<u8>, ImageError> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
+    use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb};
+
     use super::{ImageError, process_upload};
 
     #[test]
@@ -35,5 +39,18 @@ mod tests {
         let err = process_upload(b"not an image").unwrap_err();
 
         assert!(matches!(err, ImageError::InvalidFormat));
+    }
+
+    #[test]
+    fn resizes_valid_png_to_jpeg_with_max_width() {
+        let image = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(1200, 600, Rgb([200, 10, 10])));
+        let mut input = Cursor::new(Vec::new());
+        image.write_to(&mut input, ImageFormat::Png).unwrap();
+
+        let output = process_upload(input.get_ref()).unwrap();
+
+        assert_eq!(image::guess_format(&output).unwrap(), ImageFormat::Jpeg);
+        let decoded = image::load_from_memory(&output).unwrap();
+        assert!(decoded.width() <= 800);
     }
 }
