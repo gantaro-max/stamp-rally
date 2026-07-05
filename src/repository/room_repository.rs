@@ -51,6 +51,34 @@ pub async fn insert(
     Ok(result.last_insert_id() as i32)
 }
 
+pub async fn update(
+    pool: &MySqlPool,
+    id: i32,
+    room_name: &str,
+    quest_text: &str,
+    answer: Option<&str>,
+    hint_msg: Option<&str>,
+    image_id: Option<i32>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE rooms
+        SET room_name = ?, quest_text = ?, answer = ?, hint_msg = ?, image_id = ?
+        WHERE id = ?
+        "#,
+    )
+    .bind(room_name)
+    .bind(quest_text)
+    .bind(answer)
+    .bind(hint_msg)
+    .bind(image_id)
+    .bind(id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn find_by_id(pool: &MySqlPool, id: i32) -> Result<Option<Room>, sqlx::Error> {
     let Some(row) = sqlx::query(
         r#"
@@ -165,7 +193,7 @@ mod tests {
             "New Quest",
             Some("new"),
             Some("new hint"),
-            Some(123),
+            None,
         )
         .await
         .unwrap();
@@ -175,6 +203,6 @@ mod tests {
         assert_eq!(room.quest_text, "New Quest");
         assert_eq!(room.answer.as_deref(), Some("new"));
         assert_eq!(room.hint_msg.as_deref(), Some("new hint"));
-        assert_eq!(room.image_id, Some(123));
+        assert_eq!(room.image_id, None);
     }
 }
