@@ -141,4 +141,40 @@ mod tests {
 
         assert_eq!(super::count(&pool, event_id).await.unwrap(), 2);
     }
+
+    #[sqlx::test]
+    async fn updates_room_fields(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let room_id = super::insert(
+            &pool,
+            event_id,
+            "Old Room",
+            "Old Quest",
+            Some("old"),
+            Some("old hint"),
+            None,
+            "qr-update-1",
+        )
+        .await
+        .unwrap();
+
+        super::update(
+            &pool,
+            room_id,
+            "New Room",
+            "New Quest",
+            Some("new"),
+            Some("new hint"),
+            Some(123),
+        )
+        .await
+        .unwrap();
+
+        let room = super::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        assert_eq!(room.room_name, "New Room");
+        assert_eq!(room.quest_text, "New Quest");
+        assert_eq!(room.answer.as_deref(), Some("new"));
+        assert_eq!(room.hint_msg.as_deref(), Some("new hint"));
+        assert_eq!(room.image_id, Some(123));
+    }
 }
