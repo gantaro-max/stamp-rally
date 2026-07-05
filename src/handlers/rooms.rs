@@ -306,6 +306,56 @@ pub struct CsrfForm {
     csrf_token: Option<String>,
 }
 
+
+pub async fn update(
+    State(pool): State<MySqlPool>,
+    session: Session,
+    AxumPath(id): AxumPath<i32>,
+    multipart: Multipart,
+) -> Response {
+    let Some(event) = (match crate::repository::event_repository::find_singleton(&pool).await {
+        Ok(event) => event,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }) else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let form = match parse_room_multipart(multipart).await {
+        Ok(form) => form,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+
+    if !csrf_service::verify_token(&session, form.csrf_token.as_deref().unwrap_or("")).await {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    let values = RoomEditTemplateValues {
+        room_id: id,
+        room_name: form.room_name.clone(),
+        quest_text: form.quest_text.clone(),
+        answer: form.answer.clone().unwrap_or_default(),
+        hint_msg: form.hint_msg.clone().unwrap_or_default(),
+    };
+    let input = room_service::UpdateRoomInput {
+        room_name: form.room_name,
+        quest_text: form.quest_text,
+        answer: form.answer,
+        hint_msg: form.hint_msg,
+        image_bytes: form.image_bytes,
+    };
+
+    match room_service::update(&pool, id, input).await {
+        Ok(()) => redirect_to("/admin/rooms"),
+        Err(room_service::RoomError::NotFound) => StatusCode::NOT_FOUND.into_response(),
+        Err(room_service::RoomError::AnswerRequired) => {
+            render_edit_form(session, event.require_answer_check, Some("正解を入力してください"), values).await
+        }
+        Err(room_service::RoomError::Image(_)) => {
+            render_edit_form(session, event.require_answer_check, Some("画像を確認してください"), values).await
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
 pub async fn delete(
     State(pool): State<MySqlPool>,
     session: Session,
