@@ -5,6 +5,7 @@ pub enum ImageError {
     TooLarge,
     InvalidFormat,
     DecodeFailed,
+    DimensionsTooLarge,
 }
 
 pub fn process_upload(bytes: &[u8]) -> Result<Vec<u8>, ImageError> {
@@ -63,6 +64,17 @@ mod tests {
         let err = process_upload(b"not an image").unwrap_err();
 
         assert!(matches!(err, ImageError::InvalidFormat));
+    }
+
+    #[test]
+    fn rejects_images_with_excessive_dimensions() {
+        let image = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(9000, 1, Rgb([20, 20, 20])));
+        let mut input = Cursor::new(Vec::new());
+        image.write_to(&mut input, ImageFormat::Png).unwrap();
+
+        let err = process_upload(input.get_ref()).unwrap_err();
+
+        assert!(matches!(err, ImageError::DimensionsTooLarge));
     }
 
     #[test]
