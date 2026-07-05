@@ -1,7 +1,7 @@
 use sqlx::MySqlPool;
 use uuid::Uuid;
 
-use crate::repository::room_repository;
+use crate::repository::{event_repository, room_repository};
 
 pub const MAX_ROOMS: i64 = 15;
 
@@ -37,8 +37,16 @@ pub async fn create(
         return Err(RoomError::MaxRoomsReached);
     }
 
+    let require_answer_check = event_repository::find_singleton(pool)
+        .await?
+        .map(|event| event.require_answer_check)
+        .unwrap_or(false);
     let answer = input.answer.as_deref();
     let hint_msg = input.hint_msg.as_deref();
+
+    if require_answer_check && answer.is_none_or(|value| value.trim().is_empty()) {
+        return Err(RoomError::AnswerRequired);
+    }
 
     room_repository::insert(
         pool,
