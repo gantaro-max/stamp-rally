@@ -216,4 +216,27 @@ mod tests {
         let body = String::from_utf8(body.to_vec()).unwrap();
         assert!(body.contains("パスワードが正しくありません"));
     }
+
+    #[tokio::test]
+    async fn login_rejects_missing_or_mismatched_csrf_token() {
+        for body in [
+            "password=admin-secret",
+            "password=admin-secret&csrf_token=",
+            "password=admin-secret&csrf_token=wrong",
+        ] {
+            let response = app_router(test_pool())
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/auth/login")
+                        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
+    }
 }
