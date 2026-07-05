@@ -620,6 +620,48 @@ mod tests {
         assert_eq!(crate::repository::room_repository::count(&pool, event_id).await.unwrap(), 0);
     }
 
+    #[sqlx::test]
+    async fn room_edit_returns_404_for_missing_room(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool);
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/rooms/edit/9999")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
     #[tokio::test]
     async fn logout_redirects_when_not_logged_in() {
         let response = app_router(test_pool())
