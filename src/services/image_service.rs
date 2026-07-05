@@ -25,4 +25,11 @@ mod tests {
 
         assert!(matches!(err, ImageError::TooLarge));
     }
+
+    #[test]
+    fn rejects_non_jpeg_or_png_magic_bytes() {
+        let err = process_upload(b"not an image").unwrap_err();
+
+        assert!(matches!(err, ImageError::InvalidFormat));
+    }
 }
