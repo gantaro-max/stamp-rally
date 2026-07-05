@@ -299,3 +299,25 @@ async fn render_edit_form(
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
+
+
+#[derive(serde::Deserialize)]
+pub struct CsrfForm {
+    csrf_token: Option<String>,
+}
+
+pub async fn delete(
+    State(pool): State<MySqlPool>,
+    session: Session,
+    AxumPath(id): AxumPath<i32>,
+    axum::Form(form): axum::Form<CsrfForm>,
+) -> Response {
+    if !csrf_service::verify_token(&session, form.csrf_token.as_deref().unwrap_or("")).await {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    match room_service::delete(&pool, id).await {
+        Ok(()) | Err(room_service::RoomError::NotFound) => redirect_to("/admin/rooms"),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
