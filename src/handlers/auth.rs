@@ -52,6 +52,10 @@ pub async fn login(
     }
 }
 
+pub async fn logout() -> Response {
+    redirect_to("/auth/login")
+}
+
 async fn render_login(session: Session, error_message: Option<&'static str>) -> Response {
     let csrf_token = csrf_service::issue_token(&session).await;
     let template = LoginTemplate {

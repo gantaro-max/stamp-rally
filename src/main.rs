@@ -3,7 +3,10 @@ mod middleware;
 mod repository;
 mod services;
 
-use axum::{Router, middleware as axum_middleware, routing::get};
+use axum::{
+    Router, middleware as axum_middleware,
+    routing::{get, post},
+};
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
 use std::{env, net::SocketAddr, process};
 use time::Duration;
@@ -54,12 +57,20 @@ fn app_router(pool: MySqlPool) -> Router {
             middleware::require_admin::require_admin,
         ));
 
+    let logout_router = Router::new().route(
+        "/logout",
+        post(handlers::auth::logout).route_layer(axum_middleware::from_fn(
+            middleware::require_admin::require_admin,
+        )),
+    );
+
     Router::new()
         .route("/health", get(handlers::health::health))
         .route(
             "/auth/login",
             get(handlers::auth::login_form).post(handlers::auth::login),
         )
+        .nest("/auth", logout_router)
         .nest("/admin", admin_router)
         .with_state(pool)
         .layer(session_layer)
