@@ -43,7 +43,7 @@ pub async fn login(
             }
             redirect_to("/admin/dashboard")
         }
-        Ok(false) => StatusCode::UNAUTHORIZED.into_response(),
+        Ok(false) => render_login(session, Some("パスワードが正しくありません")).await,
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
