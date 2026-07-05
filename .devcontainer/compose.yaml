@@ -1,0 +1,35 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: stamprally-db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootroot
+      MYSQL_DATABASE: stamprally
+      MYSQL_USER: gantaro
+      MYSQL_PASSWORD: stamprally_dev_pass
+    ports:
+      - "3307:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootroot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - db-data:/var/lib/mysql
+
+  rust_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stamprally_rust
+    volumes:
+      - ..:/app
+      - /app/target/
+    ports:
+      - "8099:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  db-data:

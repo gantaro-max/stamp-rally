@@ -1,0 +1,33 @@
+{
+    "name": "StampRallyBot",
+    "dockerComposeFile": "compose.yaml",
+    "service": "rust_app",
+    "workspaceFolder": "/app",
+    "overrideCommand": true,
+    "containerEnv": {
+        "LANG": "C.UTF-8"
+    },
+    "remoteEnv": {
+        "LANG": "C.UTF-8"
+    },
+    "remoteUser": "vscode",
+    "updateRemoteUserUID": true,
+    "postCreateCommand": "sudo chown -R vscode /usr/local/cargo/registry && sudo chown -R vscode /app/target",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "tamasfe-even-better.toml",
+                "anthropic.claude-code",
+                "openai.chatgpt",
+                "ms-azuretools.vscode-containers",
+                "mtxr.sqltools",
+                "mtxr.sqltools-driver-mysql"
+            ],
+            "settings": {
+                "rust-analyzer.check.command": "clippy"
+            }
+        }
+    }
+
+}
