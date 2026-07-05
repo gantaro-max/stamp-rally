@@ -344,4 +344,41 @@ mod tests {
         assert_eq!(old_count, 0);
         assert_eq!(new_count, 1);
     }
+
+    #[sqlx::test]
+    async fn delete_removes_linked_image(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let room_id = super::create(
+            &pool,
+            event_id,
+            CreateRoomInput {
+                room_name: "Image Room".to_string(),
+                quest_text: "Quest".to_string(),
+                answer: None,
+                hint_msg: None,
+                image_bytes: Some(png_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        let image_id = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .image_id
+            .unwrap();
+
+        super::delete(&pool, room_id).await.unwrap();
+
+        let image_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
+            .bind(image_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert!(crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(image_count, 0);
+    }
 }
