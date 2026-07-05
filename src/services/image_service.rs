@@ -4,6 +4,7 @@ pub const MAX_UPLOAD_BYTES: usize = 5 * 1024 * 1024;
 pub enum ImageError {
     TooLarge,
     InvalidFormat,
+    DecodeFailed,
 }
 
 pub fn process_upload(bytes: &[u8]) -> Result<Vec<u8>, ImageError> {
@@ -11,10 +12,31 @@ pub fn process_upload(bytes: &[u8]) -> Result<Vec<u8>, ImageError> {
         return Err(ImageError::TooLarge);
     }
 
-    match image::guess_format(bytes) {
-        Ok(image::ImageFormat::Jpeg | image::ImageFormat::Png) => Ok(Vec::new()),
-        _ => Err(ImageError::InvalidFormat),
-    }
+    let format = match image::guess_format(bytes) {
+        Ok(image::ImageFormat::Jpeg | image::ImageFormat::Png) => image::guess_format(bytes).unwrap(),
+        _ => return Err(ImageError::InvalidFormat),
+    };
+
+    let image = image::load_from_memory_with_format(bytes, format)
+        .map_err(|_| ImageError::DecodeFailed)?;
+    let resized = if image.width() > 800 {
+        image.resize(800, u32::MAX, image::imageops::FilterType::Lanczos3)
+    } else {
+        image
+    };
+    let rgb = resized.to_rgb8();
+    let mut output = Vec::new();
+    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, 80);
+    encoder
+        .encode(
+            rgb.as_raw(),
+            rgb.width(),
+            rgb.height(),
+            image::ExtendedColorType::Rgb8,
+        )
+        .map_err(|_| ImageError::DecodeFailed)?;
+
+    Ok(output)
 }
 
 #[cfg(test)]
