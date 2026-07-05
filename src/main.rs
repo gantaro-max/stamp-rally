@@ -49,7 +49,10 @@ fn app_router(pool: MySqlPool) -> Router {
 
     Router::new()
         .route("/health", get(handlers::health::health))
-        .route("/auth/login", get(handlers::auth::login_form))
+        .route(
+            "/auth/login",
+            get(handlers::auth::login_form).post(handlers::auth::login),
+        )
         .with_state(pool)
         .layer(session_layer)
 }

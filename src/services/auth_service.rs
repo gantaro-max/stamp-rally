@@ -38,6 +38,14 @@ pub async fn seed_admin_event_if_empty(
     Ok(())
 }
 
+pub async fn try_login(pool: &MySqlPool, submitted_password: &str) -> Result<bool, sqlx::Error> {
+    let Some(event) = event_repository::find_singleton(pool).await? else {
+        return Ok(false);
+    };
+
+    Ok(verify_password(submitted_password, &event.admin_pass_hash))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{hash_password, verify_password};
