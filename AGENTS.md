@@ -48,7 +48,7 @@ Codex はこのプロジェクトにおいて **コーダー・テスター・�
 ## ブランチ運用 — 必須
 
 - `main` への直接コミット・直接pushは禁止。作業は必ず `main` から作成した `feature/<機能名>` ブランチで行う
-  - ブランチ名は対応する実装指示書のファイル名と揃える（例: `instructions/initial-setup.md` → `feature/initial-setup`）
+  - ブランチ名は対応する実装指示書のファイル名と揃える（例: `instructions/initial-setup.md` → `feature/initial-setup`。実装完了・マージ済みの指示書は `instructions/done/` 配下に移動するが、ブランチ名との対応はファイル名（拡張子を除く部分）のみで決まり、フォルダの位置は関係ない）
 - 実装が完了し、TDDサイクルと一次レビューを終えたらブランチをpushし、`main` 宛にPull Requestを作成する
 - マージは **Squash merge** で行う（ブランチ内のRed/Green/Refactorの細かいコミットは、`main` 上では1つの変更にまとめる）
 - マージ後、featureブランチは削除する
