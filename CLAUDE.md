@@ -9,9 +9,9 @@ Claude はこのプロジェクトにおいて **シニアエンジニア兼PM�
 | 業務 | 内容 | 成果物 |
 |:--|:--|:--|
 | 要求整理 | ユーザーの要望を聞き、実現すべきことを明確化する | 会話・メモ |
-| 要件定義 | 機能要件・非機能要件を整理する | `requirements.md` |
-| **基本設計** | アーキテクチャ・API・DB・コンポーネント責務を設計する | `architecture.md` / `api.md` / `database.md` |
-| 実装指示書の作成 | 基本設計を踏まえ、Codex が実装できる粒度の仕様書を作成する（詳細設計を兼ねる） | 指示書ファイル |
+| 要件定義 | 機能要件・非機能要件を整理する | `docs/requirements.md` |
+| **基本設計** | アーキテクチャ・API・DB・コンポーネント責務を設計する | `docs/architecture.md` / `docs/api.md` / `docs/database.md` |
+| 実装指示書の作成 | 基本設計を踏まえ、CodexがTDD（Red-Green-Refactor）で実装できるよう、テストケースを含めた仕様書を作成する（詳細設計を兼ねる） | 指示書ファイル |
 | **最終レビュー** | 複数のサブエージェントを並列起動し、Codex の一次レビューを経たコードを最終確認する | レビューレポート |
 | ドキュメント更新 | 実装完了後に各ドキュメント・`CHANGELOG.md`・`SECURITY.md` 等を最新化する | 各ドキュメント |
 
@@ -28,12 +28,12 @@ Claude はこのプロジェクトにおいて **シニアエンジニア兼PM�
 ```
 1. ユーザーから要望を受ける
         ↓
-2. Claude: 要求を整理し、要件定義を確認・更新（requirements.md）
+2. Claude: 要求を整理し、要件定義を確認・更新（docs/requirements.md）
         ↓
 3. Claude: 基本設計を行い設計書を更新
-        │  - アーキテクチャ / コンポーネント責務（architecture.md）
-        │  - API エンドポイント（api.md）
-        │  - テーブル設計（database.md）
+        │  - アーキテクチャ / コンポーネント責務（docs/architecture.md）
+        │  - API エンドポイント（docs/api.md）
+        │  - テーブル設計（docs/database.md）
         ↓
 4. Claude: 基本設計を踏まえた実装指示書を作成（詳細設計を兼ねる）
         ↓
@@ -54,10 +54,11 @@ Codex の一次レビューを経たコードに対して、以下の観点で *
 
 | エージェント | レビュー観点 |
 |:--|:--|
-| 設計整合性レビュー | 基本設計（`architecture.md` / `api.md` / `database.md`）との整合性 |
+| 設計整合性レビュー | 基本設計（`docs/architecture.md` / `docs/api.md` / `docs/database.md`）との整合性 |
 | セキュリティレビュー | `SECURITY.md` の対策が実装に反映されているか、新たな脆弱性の混入がないか |
-| 要件充足レビュー | `requirements.md` の要件をすべて満たしているか |
+| 要件充足レビュー | `docs/requirements.md` の要件をすべて満たしているか |
 | 実装指示書レビュー | 完了条件をすべて満たしているか、指示外の変更が混入していないか |
+| TDD遵守レビュー | 指示書のテストケースに対応するテストが存在し、Red-Green-Refactorのサイクルで書かれた形跡があるか（実装を正当化するためだけの後付けテストになっていないか） |
 
 全エージェントの結果をとりまとめ、問題があれば Codex へ差し戻す。問題なければドキュメント更新へ進む。
 
@@ -69,11 +70,11 @@ Codex の一次レビューを経たコードに対して、以下の観点で *
 
 | 設計項目 | 内容 | 反映先 |
 |:--|:--|:--|
-| コンポーネント責務 | 新規モジュール・サービスの必要性と役割分担 | `architecture.md` |
-| API 設計 | エンドポイント・メソッド・パス・認証要否 | `api.md` |
-| DB 設計 | テーブル追加・カラム変更・インデックス | `database.md` |
+| コンポーネント責務 | 新規モジュール・サービスの必要性と役割分担 | `docs/architecture.md` |
+| API 設計 | エンドポイント・メソッド・パス・認証要否 | `docs/api.md` |
+| DB 設計 | テーブル追加・カラム変更・インデックス | `docs/database.md` |
 | セキュリティ方針 | 認証・認可・入力検証の方針 | `SECURITY.md` / 実装指示書 |
-| 非機能要件 | パフォーマンス・エラーハンドリング方針 | `requirements.md` |
+| 非機能要件 | パフォーマンス・エラーハンドリング方針 | `docs/requirements.md` |
 
 **設計書を更新してから実装指示書を作成する。** 設計書が最新であれば、Codex は設計書を参照して実装の背景を理解できる。
 
@@ -94,6 +95,14 @@ Codex の一次レビューを経たコードに対して、以下の観点で *
 - `src/services/xxx.rs`    — 変更内容の概要
 - `src/repository/xxx.rs`  — 変更内容の概要
 
+## テストケース（TDDの起点）
+Codexはこのプロジェクトを厳格なTDD（Red-Green-Refactor）で実装する（[AGENTS.md](AGENTS.md)参照）。
+Codexが最初に「失敗するテスト」を書けるだけの粒度で、期待する入出力・正常系・異常系を列挙する。
+
+- [ ] ケース1: 〇〇を入力したとき、〇〇が返る（正常系）
+- [ ] ケース2: 〇〇のとき、〇〇エラー・拒否になる（異常系）
+- [ ] ケース3: 境界値・エッジケース
+
 ## 実装仕様
 
 ### [ファイル名]
@@ -103,10 +112,13 @@ Codex の一次レビューを経たコードに対して、以下の観点で *
 ## 制約・注意事項
 - セキュリティ上の考慮点
 - 既存の動作を壊してはいけない箇所
-- テストすべき動作
 
 ## 完了条件
-- [ ] チェックリスト形式で検証項目を記載
+- [ ] 上記テストケースすべてについて、実装前に失敗するテストを書いたことを確認した（Red）
+- [ ] 各テストを通す最小限の実装を行った（Green）
+- [ ] リファクタリング後もすべてのテストが通ることを確認した（Refactor）
+- [ ] `cargo test` が全体で通る
+- [ ] `cargo clippy` が警告なく通る
 ```
 
 ---
@@ -120,11 +132,11 @@ LINE Bot を使った建物内スタンプラリーアプリ。1建物・最大1
 
 | ドキュメント | 内容 |
 |:--|:--|
-| [requirements.md](requirements.md) | 要件定義 |
-| [architecture.md](architecture.md) | アーキテクチャ・設計 |
-| [database.md](database.md) | テーブル設計 |
-| [api.md](api.md) | エンドポイント設計 |
-| [operator-guide.md](operator-guide.md) | 運営マニュアル |
+| [docs/requirements.md](docs/requirements.md) | 要件定義 |
+| [docs/architecture.md](docs/architecture.md) | アーキテクチャ・設計 |
+| [docs/database.md](docs/database.md) | テーブル設計 |
+| [docs/api.md](docs/api.md) | エンドポイント設計 |
+| [docs/operator-guide.md](docs/operator-guide.md) | 運営マニュアル |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 開発環境構築・コーディング規約 |
 | [SECURITY.md](SECURITY.md) | セキュリティポリシー |
 

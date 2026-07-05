@@ -7,11 +7,11 @@ LINE Bot を使った建物内スタンプラリーアプリ。1建物・最大1
 
 | ドキュメント | 内容 |
 |:--|:--|
-| [requirements.md](requirements.md) | 要件定義 |
-| [architecture.md](architecture.md) | アーキテクチャ・設計 |
-| [database.md](database.md) | テーブル設計 |
-| [api.md](api.md) | エンドポイント設計 |
-| [operator-guide.md](operator-guide.md) | 運営マニュアル |
+| [docs/requirements.md](docs/requirements.md) | 要件定義 |
+| [docs/architecture.md](docs/architecture.md) | アーキテクチャ・設計 |
+| [docs/database.md](docs/database.md) | テーブル設計 |
+| [docs/api.md](docs/api.md) | エンドポイント設計 |
+| [docs/operator-guide.md](docs/operator-guide.md) | 運営マニュアル |
 | [CLAUDE.md](CLAUDE.md) | Claude（PM）の役割・ワークフロー |
 | [AGENTS.md](AGENTS.md) | Codex の役割・コーディング規約 |
 
@@ -19,7 +19,7 @@ LINE Bot を使った建物内スタンプラリーアプリ。1建物・最大1
 
 Rust（Axum + Tokio） / sqlx（MySQL） / Askama + Bootstrap 5 / Argon2 / LINE Messaging API / LIFF
 
-詳細は [architecture.md](architecture.md) を参照。
+詳細は [docs/architecture.md](docs/architecture.md) を参照。
 
 ## 開発環境のセットアップ
 
