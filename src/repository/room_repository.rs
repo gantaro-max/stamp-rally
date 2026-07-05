@@ -13,6 +13,15 @@ pub struct Room {
     pub qr_uuid: String,
 }
 
+pub async fn count(pool: &MySqlPool, event_id: i32) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query("SELECT COUNT(*) AS count FROM rooms WHERE event_id = ?")
+        .bind(event_id)
+        .fetch_one(pool)
+        .await?;
+
+    row.try_get("count")
+}
+
 pub async fn insert(
     pool: &MySqlPool,
     event_id: i32,
