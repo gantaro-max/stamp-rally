@@ -26,7 +26,7 @@ pub struct LoginForm {
 
 #[derive(Deserialize)]
 pub struct LogoutForm {
-    csrf_token: String,
+    csrf_token: Option<String>,
 }
 
 pub async fn login_form(session: Session) -> Response {
@@ -58,7 +58,7 @@ pub async fn login(
 }
 
 pub async fn logout(session: Session, Form(form): Form<LogoutForm>) -> Response {
-    if !csrf_service::verify_token(&session, &form.csrf_token).await {
+    if !csrf_service::verify_token(&session, form.csrf_token.as_deref().unwrap_or("")).await {
         return StatusCode::FORBIDDEN.into_response();
     }
 
