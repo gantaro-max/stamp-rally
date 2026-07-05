@@ -6,8 +6,11 @@ use axum::{
 };
 use tower_sessions::Session;
 
-pub async fn require_admin(_session: Session, _request: Request, _next: Next) -> Response {
-    redirect_to("/auth/login")
+pub async fn require_admin(session: Session, request: Request, next: Next) -> Response {
+    match session.get::<bool>("admin_authenticated").await {
+        Ok(Some(true)) => next.run(request).await,
+        _ => redirect_to("/auth/login"),
+    }
 }
 
 fn redirect_to(location: &'static str) -> Response {
