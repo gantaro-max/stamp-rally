@@ -104,4 +104,21 @@ mod tests {
         assert!(matches!(err, RoomError::MaxRoomsReached));
         assert_eq!(crate::repository::room_repository::count(&pool, event_id).await.unwrap(), 15);
     }
+
+    #[sqlx::test]
+    async fn create_requires_answer_when_answer_check_enabled(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        sqlx::query("UPDATE events SET require_answer_check = TRUE WHERE id = ?")
+            .bind(event_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let err = super::create(&pool, event_id, input("No Answer".to_string()))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, RoomError::AnswerRequired));
+        assert_eq!(crate::repository::room_repository::count(&pool, event_id).await.unwrap(), 0);
+    }
 }
