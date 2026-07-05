@@ -87,6 +87,7 @@ fn app_router(pool: MySqlPool) -> Router {
         .route("/rooms/add", get(handlers::rooms::add_form).post(handlers::rooms::add))
         .route("/rooms/edit/{id}", get(handlers::rooms::edit_form))
         .route("/rooms/delete/{id}", post(handlers::rooms::delete))
+        .route("/rooms/{id}/qr", get(handlers::rooms::qr))
         .route_layer(axum_middleware::from_fn(
             middleware::require_admin::require_admin,
         ));

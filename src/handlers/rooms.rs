@@ -9,7 +9,7 @@ use tower_sessions::Session;
 
 use crate::{
     repository::room_repository::Room,
-    services::{csrf_service, room_service},
+    services::{csrf_service, qr_service, room_service},
 };
 
 #[derive(Template)]
@@ -320,4 +320,17 @@ pub async fn delete(
         Ok(()) | Err(room_service::RoomError::NotFound) => redirect_to("/admin/rooms"),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+
+pub async fn qr(State(pool): State<MySqlPool>, AxumPath(id): AxumPath<i32>) -> Response {
+    let Some(room) = (match room_service::get(&pool, id).await {
+        Ok(room) => room,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let png = qr_service::render_png(&room.qr_uuid);
+
+    ([(header::CONTENT_TYPE, "image/png")], png).into_response()
 }
