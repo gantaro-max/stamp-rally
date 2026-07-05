@@ -120,7 +120,9 @@ mod tests {
     fn extract_cookie(response: &axum::response::Response) -> String {
         response
             .headers()
-            .get(header::SET_COOKIE)
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .next_back()
             .unwrap()
             .to_str()
             .unwrap()
