@@ -335,6 +335,25 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn admin_rooms_redirects_when_not_logged_in() {
+        let response = app_router(test_pool())
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/rooms")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/auth/login"
+        );
+    }
+
     #[sqlx::test]
     async fn authenticated_session_can_access_dashboard(pool: sqlx::MySqlPool) {
         crate::services::auth_service::seed_admin_event_if_empty(
