@@ -5,6 +5,8 @@ mod services;
 use axum::{Router, routing::get};
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
 use std::{env, net::SocketAddr, process};
+use time::Duration;
+use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
 
 #[tokio::main]
 async fn main() {
@@ -42,9 +44,14 @@ async fn main() {
 }
 
 fn app_router(pool: MySqlPool) -> Router {
+    let session_layer = SessionManagerLayer::new(MemoryStore::default())
+        .with_expiry(Expiry::OnInactivity(Duration::hours(12)));
+
     Router::new()
         .route("/health", get(handlers::health::health))
+        .route("/auth/login", get(handlers::auth::login_form))
         .with_state(pool)
+        .layer(session_layer)
 }
 
 #[cfg(test)]
