@@ -7,7 +7,7 @@ edition = "2024"
 argon2 = "0.5.3"
 askama = "0.16.0"
 askama_web = { version = "0.16.0", features = ["axum-0.8"] }
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["multipart"] }
 chrono = "0.4.45"
 dotenvy = "0.15.7"
 image = "0.25.10"

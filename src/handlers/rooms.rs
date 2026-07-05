@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{
-    extract::State,
-    http::StatusCode,
+    extract::{Multipart, State},
+    http::{StatusCode, header},
     response::{Html, IntoResponse, Response},
 };
 use sqlx::MySqlPool;
@@ -104,4 +104,112 @@ async fn render_add_form(
         Ok(body) => Html(body).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+
+struct RoomMultipartForm {
+    room_name: String,
+    quest_text: String,
+    answer: Option<String>,
+    hint_msg: Option<String>,
+    image_bytes: Option<Vec<u8>>,
+    csrf_token: Option<String>,
+}
+
+impl RoomMultipartForm {
+    fn values(&self) -> AddTemplateValues {
+        AddTemplateValues {
+            room_name: self.room_name.clone(),
+            quest_text: self.quest_text.clone(),
+            answer: self.answer.clone().unwrap_or_default(),
+            hint_msg: self.hint_msg.clone().unwrap_or_default(),
+        }
+    }
+}
+
+pub async fn add(
+    State(pool): State<MySqlPool>,
+    session: Session,
+    multipart: Multipart,
+) -> Response {
+    let Some(event) = (match crate::repository::event_repository::find_singleton(&pool).await {
+        Ok(event) => event,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }) else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let form = match parse_room_multipart(multipart).await {
+        Ok(form) => form,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+
+
+    let values = form.values();
+    let input = room_service::CreateRoomInput {
+        room_name: form.room_name,
+        quest_text: form.quest_text,
+        answer: form.answer,
+        hint_msg: form.hint_msg,
+        image_bytes: form.image_bytes,
+    };
+
+    match room_service::create(&pool, event.id, input).await {
+        Ok(_) => redirect_to("/admin/rooms"),
+        Err(room_service::RoomError::MaxRoomsReached) => {
+            render_add_form(session, event.require_answer_check, Some("部屋数の上限に達しています"), values).await
+        }
+        Err(room_service::RoomError::AnswerRequired) => {
+            render_add_form(session, event.require_answer_check, Some("正解を入力してください"), values).await
+        }
+        Err(room_service::RoomError::Image(_)) => {
+            render_add_form(session, event.require_answer_check, Some("画像を確認してください"), values).await
+        }
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+async fn parse_room_multipart(mut multipart: Multipart) -> Result<RoomMultipartForm, ()> {
+    let mut form = RoomMultipartForm {
+        room_name: String::new(),
+        quest_text: String::new(),
+        answer: None,
+        hint_msg: None,
+        image_bytes: None,
+        csrf_token: None,
+    };
+
+    while let Some(field) = multipart.next_field().await.map_err(|_| ())? {
+        let name = field.name().unwrap_or_default().to_string();
+        if name == "image" {
+            let bytes = field.bytes().await.map_err(|_| ())?;
+            if !bytes.is_empty() {
+                form.image_bytes = Some(bytes.to_vec());
+            }
+            continue;
+        }
+        let value = field.text().await.map_err(|_| ())?;
+        match name.as_str() {
+            "room_name" => form.room_name = value,
+            "quest_text" => form.quest_text = value,
+            "answer" => form.answer = non_empty(value),
+            "hint_msg" => form.hint_msg = non_empty(value),
+            "csrf_token" => form.csrf_token = Some(value),
+            _ => {}
+        }
+    }
+
+    Ok(form)
+}
+
+fn non_empty(value: String) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn redirect_to(location: &'static str) -> Response {
+    (StatusCode::FOUND, [(header::LOCATION, location)]).into_response()
 }

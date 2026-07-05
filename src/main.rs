@@ -84,7 +84,7 @@ fn app_router(pool: MySqlPool) -> Router {
     let admin_router = Router::new()
         .route("/dashboard", get(handlers::admin::dashboard))
         .route("/rooms", get(handlers::rooms::list))
-        .route("/rooms/add", get(handlers::rooms::add_form))
+        .route("/rooms/add", get(handlers::rooms::add_form).post(handlers::rooms::add))
         .route_layer(axum_middleware::from_fn(
             middleware::require_admin::require_admin,
         ));
