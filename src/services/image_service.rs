@@ -13,12 +13,14 @@ pub fn process_upload(bytes: &[u8]) -> Result<Vec<u8>, ImageError> {
     }
 
     let format = match image::guess_format(bytes) {
-        Ok(image::ImageFormat::Jpeg | image::ImageFormat::Png) => image::guess_format(bytes).unwrap(),
+        Ok(image::ImageFormat::Jpeg | image::ImageFormat::Png) => {
+            image::guess_format(bytes).unwrap()
+        }
         _ => return Err(ImageError::InvalidFormat),
     };
 
-    let image = image::load_from_memory_with_format(bytes, format)
-        .map_err(|_| ImageError::DecodeFailed)?;
+    let image =
+        image::load_from_memory_with_format(bytes, format).map_err(|_| ImageError::DecodeFailed)?;
     let resized = if image.width() > 800 {
         image.resize(800, u32::MAX, image::imageops::FilterType::Lanczos3)
     } else {

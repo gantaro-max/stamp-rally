@@ -61,7 +61,13 @@ pub async fn add_form(State(pool): State<MySqlPool>, session: Session) -> Respon
     }) else {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
-    render_add_form(session, event.require_answer_check, None, default_add_template_values()).await
+    render_add_form(
+        session,
+        event.require_answer_check,
+        None,
+        default_add_template_values(),
+    )
+    .await
 }
 
 struct AddTemplateValues {
@@ -106,7 +112,6 @@ async fn render_add_form(
     }
 }
 
-
 struct RoomMultipartForm {
     room_name: String,
     quest_text: String,
@@ -143,7 +148,6 @@ pub async fn add(
         Err(_) => return StatusCode::BAD_REQUEST.into_response(),
     };
 
-
     if !csrf_service::verify_token(&session, form.csrf_token.as_deref().unwrap_or("")).await {
         return StatusCode::FORBIDDEN.into_response();
     }
@@ -160,13 +164,31 @@ pub async fn add(
     match room_service::create(&pool, event.id, input).await {
         Ok(_) => redirect_to("/admin/rooms"),
         Err(room_service::RoomError::MaxRoomsReached) => {
-            render_add_form(session, event.require_answer_check, Some("部屋数の上限に達しています"), values).await
+            render_add_form(
+                session,
+                event.require_answer_check,
+                Some("部屋数の上限に達しています"),
+                values,
+            )
+            .await
         }
         Err(room_service::RoomError::AnswerRequired) => {
-            render_add_form(session, event.require_answer_check, Some("正解を入力してください"), values).await
+            render_add_form(
+                session,
+                event.require_answer_check,
+                Some("正解を入力してください"),
+                values,
+            )
+            .await
         }
         Err(room_service::RoomError::Image(_)) => {
-            render_add_form(session, event.require_answer_check, Some("画像を確認してください"), values).await
+            render_add_form(
+                session,
+                event.require_answer_check,
+                Some("画像を確認してください"),
+                values,
+            )
+            .await
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -217,7 +239,6 @@ fn non_empty(value: String) -> Option<String> {
 fn redirect_to(location: &'static str) -> Response {
     (StatusCode::FOUND, [(header::LOCATION, location)]).into_response()
 }
-
 
 #[derive(Template)]
 #[template(path = "admin/rooms/edit.html")]
@@ -300,12 +321,10 @@ async fn render_edit_form(
     }
 }
 
-
 #[derive(serde::Deserialize)]
 pub struct CsrfForm {
     csrf_token: Option<String>,
 }
-
 
 pub async fn update(
     State(pool): State<MySqlPool>,
@@ -347,10 +366,22 @@ pub async fn update(
         Ok(()) => redirect_to("/admin/rooms"),
         Err(room_service::RoomError::NotFound) => StatusCode::NOT_FOUND.into_response(),
         Err(room_service::RoomError::AnswerRequired) => {
-            render_edit_form(session, event.require_answer_check, Some("正解を入力してください"), values).await
+            render_edit_form(
+                session,
+                event.require_answer_check,
+                Some("正解を入力してください"),
+                values,
+            )
+            .await
         }
         Err(room_service::RoomError::Image(_)) => {
-            render_edit_form(session, event.require_answer_check, Some("画像を確認してください"), values).await
+            render_edit_form(
+                session,
+                event.require_answer_check,
+                Some("画像を確認してください"),
+                values,
+            )
+            .await
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -371,7 +402,6 @@ pub async fn delete(
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
-
 
 pub async fn qr(State(pool): State<MySqlPool>, AxumPath(id): AxumPath<i32>) -> Response {
     let Some(room) = (match room_service::get(&pool, id).await {

@@ -84,7 +84,10 @@ fn app_router(pool: MySqlPool) -> Router {
     let admin_router = Router::new()
         .route("/dashboard", get(handlers::admin::dashboard))
         .route("/rooms", get(handlers::rooms::list))
-        .route("/rooms/add", get(handlers::rooms::add_form).post(handlers::rooms::add))
+        .route(
+            "/rooms/add",
+            get(handlers::rooms::add_form).post(handlers::rooms::add),
+        )
         .route("/rooms/edit/{id}", get(handlers::rooms::edit_form))
         .route("/rooms/update/{id}", post(handlers::rooms::update))
         .route("/rooms/delete/{id}", post(handlers::rooms::delete))
@@ -554,7 +557,10 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri("/admin/rooms/add")
-                    .header(header::CONTENT_TYPE, format!("multipart/form-data; boundary={boundary}"))
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
                     .header(header::COOKIE, session_cookie)
                     .body(Body::from(body))
                     .unwrap(),
@@ -563,8 +569,16 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::FOUND);
-        assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/admin/rooms");
-        assert_eq!(crate::repository::room_repository::count(&pool, event_id).await.unwrap(), 1);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/admin/rooms"
+        );
+        assert_eq!(
+            crate::repository::room_repository::count(&pool, event_id)
+                .await
+                .unwrap(),
+            1
+        );
     }
 
     #[sqlx::test]
@@ -600,7 +614,10 @@ mod tests {
             .unwrap();
         let session_cookie = extract_cookie(&login_response);
 
-        for csrf_part in ["", "--room-boundary\r\nContent-Disposition: form-data; name=\"csrf_token\"\r\n\r\nwrong\r\n"] {
+        for csrf_part in [
+            "",
+            "--room-boundary\r\nContent-Disposition: form-data; name=\"csrf_token\"\r\n\r\nwrong\r\n",
+        ] {
             let boundary = "room-boundary";
             let body = format!(
                 "{csrf_part}--{boundary}\r\nContent-Disposition: form-data; name=\"room_name\"\r\n\r\nLibrary\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"quest_text\"\r\n\r\nFind a book\r\n--{boundary}--\r\n"
@@ -611,7 +628,10 @@ mod tests {
                     Request::builder()
                         .method("POST")
                         .uri("/admin/rooms/add")
-                        .header(header::CONTENT_TYPE, format!("multipart/form-data; boundary={boundary}"))
+                        .header(
+                            header::CONTENT_TYPE,
+                            format!("multipart/form-data; boundary={boundary}"),
+                        )
                         .header(header::COOKIE, session_cookie.clone())
                         .body(Body::from(body))
                         .unwrap(),
@@ -621,7 +641,12 @@ mod tests {
 
             assert_eq!(response.status(), StatusCode::FORBIDDEN);
         }
-        assert_eq!(crate::repository::room_repository::count(&pool, event_id).await.unwrap(), 0);
+        assert_eq!(
+            crate::repository::room_repository::count(&pool, event_id)
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     #[sqlx::test]
@@ -725,11 +750,16 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::FOUND);
-        assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/admin/rooms");
-        assert!(crate::repository::room_repository::find_by_id(&pool, room_id)
-            .await
-            .unwrap()
-            .is_none());
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/admin/rooms"
+        );
+        assert!(
+            crate::repository::room_repository::find_by_id(&pool, room_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[sqlx::test]
@@ -789,7 +819,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.headers().get(header::CONTENT_TYPE).unwrap(), "image/png");
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "image/png"
+        );
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         assert_eq!(image::guess_format(&body).unwrap(), image::ImageFormat::Png);
     }
@@ -848,7 +881,10 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri(format!("/admin/rooms/update/{room_id}"))
-                    .header(header::CONTENT_TYPE, format!("multipart/form-data; boundary={boundary}"))
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
                     .header(header::COOKIE, session_cookie)
                     .body(Body::from(body))
                     .unwrap(),
@@ -857,7 +893,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::FOUND);
-        assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/admin/rooms");
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/admin/rooms"
+        );
         let room = crate::repository::room_repository::find_by_id(&pool, room_id)
             .await
             .unwrap()
