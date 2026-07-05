@@ -399,6 +399,68 @@ mod tests {
         assert_eq!(&body[..], b"ok");
     }
 
+    #[sqlx::test]
+    async fn authenticated_session_can_view_rooms(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        crate::repository::room_repository::insert(
+            &pool,
+            event_id,
+            "Library",
+            "Find a book",
+            None,
+            None,
+            None,
+            "qr-list-1",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool);
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/rooms")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("Library"));
+    }
+
     #[tokio::test]
     async fn logout_redirects_when_not_logged_in() {
         let response = app_router(test_pool())
