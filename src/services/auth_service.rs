@@ -1,3 +1,27 @@
+use argon2::{
+    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+    password_hash::{SaltString, rand_core::OsRng},
+};
+
+pub fn hash_password(plain: &str) -> String {
+    let salt = SaltString::generate(&mut OsRng);
+
+    Argon2::default()
+        .hash_password(plain.as_bytes(), &salt)
+        .expect("password hashing should not fail")
+        .to_string()
+}
+
+pub fn verify_password(plain: &str, hash: &str) -> bool {
+    let Ok(parsed_hash) = PasswordHash::new(hash) else {
+        return false;
+    };
+
+    Argon2::default()
+        .verify_password(plain.as_bytes(), &parsed_hash)
+        .is_ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{hash_password, verify_password};
