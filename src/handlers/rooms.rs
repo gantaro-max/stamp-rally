@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::{
-    extract::{Multipart, State},
+    extract::{Multipart, Path as AxumPath, State},
     http::{StatusCode, header},
     response::{Html, IntoResponse, Response},
 };
@@ -216,4 +216,86 @@ fn non_empty(value: String) -> Option<String> {
 
 fn redirect_to(location: &'static str) -> Response {
     (StatusCode::FOUND, [(header::LOCATION, location)]).into_response()
+}
+
+
+#[derive(Template)]
+#[template(path = "admin/rooms/edit.html")]
+struct RoomEditTemplate {
+    room_id: i32,
+    csrf_token: String,
+    require_answer_check: bool,
+    room_name: String,
+    quest_text: String,
+    answer: String,
+    hint_msg: String,
+    error_message: Option<&'static str>,
+}
+
+pub async fn edit_form(
+    State(pool): State<MySqlPool>,
+    session: Session,
+    AxumPath(id): AxumPath<i32>,
+) -> Response {
+    let Some(event) = (match crate::repository::event_repository::find_singleton(&pool).await {
+        Ok(event) => event,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }) else {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    };
+    let Some(room) = (match room_service::get(&pool, id).await {
+        Ok(room) => room,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    render_edit_form(
+        session,
+        event.require_answer_check,
+        None,
+        RoomEditTemplateValues {
+            room_id: room.id,
+            room_name: room.room_name,
+            quest_text: room.quest_text,
+            answer: room.answer.unwrap_or_default(),
+            hint_msg: room.hint_msg.unwrap_or_default(),
+        },
+    )
+    .await
+}
+
+struct RoomEditTemplateValues {
+    room_id: i32,
+    room_name: String,
+    quest_text: String,
+    answer: String,
+    hint_msg: String,
+}
+
+async fn render_edit_form(
+    session: Session,
+    require_answer_check: bool,
+    error_message: Option<&'static str>,
+    values: RoomEditTemplateValues,
+) -> Response {
+    let csrf_token = match csrf_service::issue_token(&session).await {
+        Ok(token) => token,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let template = RoomEditTemplate {
+        room_id: values.room_id,
+        csrf_token,
+        require_answer_check,
+        room_name: values.room_name,
+        quest_text: values.quest_text,
+        answer: values.answer,
+        hint_msg: values.hint_msg,
+        error_message,
+    };
+
+    match template.render() {
+        Ok(body) => Html(body).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }

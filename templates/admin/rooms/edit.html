@@ -1,0 +1,18 @@
+{% extends "admin/_base.html" %}
+{% block title %}部屋編集{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">部屋編集</h1>
+{% if error_message.is_some() %}<div class="alert alert-danger">{{ error_message.as_ref().unwrap() }}</div>{% endif %}
+<form method="post" action="/admin/rooms/update/{{ room_id }}" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="mb-3"><label class="form-label">部屋名</label><input class="form-control" type="text" name="room_name" value="{{ room_name }}" required></div>
+  <div class="mb-3"><label class="form-label">クエスト文</label><textarea class="form-control" name="quest_text" required>{{ quest_text }}</textarea></div>
+  {% if require_answer_check %}
+  <div class="mb-3"><label class="form-label">正解</label><input class="form-control" type="text" name="answer" value="{{ answer }}"></div>
+  <div class="mb-3"><label class="form-label">ヒント</label><input class="form-control" type="text" name="hint_msg" value="{{ hint_msg }}"></div>
+  {% endif %}
+  <div class="mb-3"><label class="form-label">画像</label><input class="form-control" type="file" name="image" accept="image/png,image/jpeg"></div>
+  <button class="btn btn-primary" type="submit">更新</button>
+  <a class="btn btn-link" href="/admin/rooms">戻る</a>
+</form>
+{% endblock %}
