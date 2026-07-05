@@ -113,9 +113,13 @@ mod tests {
         Router,
         body::{Body, to_bytes},
         http::{Request, StatusCode, header},
+        middleware as axum_middleware,
+        routing::{get, post},
     };
     use sqlx::mysql::MySqlPoolOptions;
+    use time::Duration;
     use tower::ServiceExt;
+    use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer};
 
     fn extract_cookie(response: &axum::response::Response) -> String {
         response
@@ -154,6 +158,27 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body = String::from_utf8(body.to_vec()).unwrap();
         (cookie, extract_csrf_token(&body))
+    }
+
+    async fn seed_authenticated_logout_session(session: Session) -> &'static str {
+        session.insert("admin_authenticated", true).await.unwrap();
+        session.insert("csrf_token", "valid-token").await.unwrap();
+        "ok"
+    }
+
+    fn logout_test_app() -> Router {
+        let session_layer = SessionManagerLayer::new(MemoryStore::default())
+            .with_expiry(Expiry::OnInactivity(Duration::hours(12)));
+
+        Router::new()
+            .route("/test/session", get(seed_authenticated_logout_session))
+            .route(
+                "/auth/logout",
+                post(crate::handlers::auth::logout).route_layer(axum_middleware::from_fn(
+                    crate::middleware::require_admin::require_admin,
+                )),
+            )
+            .layer(session_layer)
     }
 
     fn test_pool() -> sqlx::MySqlPool {
@@ -439,5 +464,39 @@ mod tests {
             dashboard_response.headers().get(header::LOCATION).unwrap(),
             "/auth/login"
         );
+    }
+
+    #[tokio::test]
+    async fn logout_rejects_missing_or_mismatched_csrf_token() {
+        let app = logout_test_app();
+        let setup_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/test/session")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&setup_response);
+
+        for body in ["csrf_token=wrong", "csrf_token=", ""] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/auth/logout")
+                        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                        .header(header::COOKIE, session_cookie.clone())
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
     }
 }
