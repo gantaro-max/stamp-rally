@@ -461,6 +461,52 @@ mod tests {
         assert!(body.contains("Library"));
     }
 
+    #[sqlx::test]
+    async fn authenticated_session_can_view_room_add_form(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool);
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/rooms/add")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains(r#"action=\"/admin/rooms/add\""#));
+        assert!(body.contains(r#"name=\"csrf_token\""#));
+    }
+
     #[tokio::test]
     async fn logout_redirects_when_not_logged_in() {
         let response = app_router(test_pool())
