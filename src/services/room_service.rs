@@ -18,6 +18,15 @@ pub struct CreateRoomInput {
 }
 
 #[derive(Debug)]
+pub struct UpdateRoomInput {
+    pub room_name: String,
+    pub quest_text: String,
+    pub answer: Option<String>,
+    pub hint_msg: Option<String>,
+    pub image_bytes: Option<Vec<u8>>,
+}
+
+#[derive(Debug)]
 pub enum RoomError {
     MaxRoomsReached,
     AnswerRequired,
@@ -84,6 +93,62 @@ pub async fn create(
     )
     .await
     .map_err(RoomError::Database)
+}
+
+pub async fn update(
+    pool: &MySqlPool,
+    id: i32,
+    input: UpdateRoomInput,
+) -> Result<(), RoomError> {
+    let Some(existing) = room_repository::find_by_id(pool, id).await? else {
+        return Err(RoomError::NotFound);
+    };
+    let require_answer_check = event_repository::find_singleton(pool)
+        .await?
+        .map(|event| event.require_answer_check)
+        .unwrap_or(false);
+    let answer = input.answer.as_deref();
+    let hint_msg = input.hint_msg.as_deref();
+
+    if require_answer_check && answer.is_none_or(|value| value.trim().is_empty()) {
+        return Err(RoomError::AnswerRequired);
+    }
+    let (answer, hint_msg) = if require_answer_check {
+        (answer, hint_msg)
+    } else {
+        (None, None)
+    };
+
+    let image_id = if let Some(bytes) = input.image_bytes {
+        let processed = image_service::process_upload(&bytes).map_err(RoomError::Image)?;
+        if let Some(old_image_id) = existing.image_id {
+            room_image_repository::delete(pool, old_image_id).await?;
+        }
+        Some(
+            room_image_repository::insert(
+                pool,
+                &Uuid::new_v4().to_string(),
+                &processed,
+                "image/jpeg",
+            )
+            .await?,
+        )
+    } else {
+        existing.image_id
+    };
+
+    room_repository::update(
+        pool,
+        id,
+        &input.room_name,
+        &input.quest_text,
+        answer,
+        hint_msg,
+        image_id,
+    )
+    .await?;
+
+    Ok(())
 }
 
 #[cfg(test)]
