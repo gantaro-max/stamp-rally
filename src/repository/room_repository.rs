@@ -79,6 +79,15 @@ pub async fn update(
     Ok(())
 }
 
+pub async fn delete(pool: &MySqlPool, id: i32) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM rooms WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
 pub async fn find_by_id(pool: &MySqlPool, id: i32) -> Result<Option<Room>, sqlx::Error> {
     let Some(row) = sqlx::query(
         r#"
