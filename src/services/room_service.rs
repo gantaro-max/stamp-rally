@@ -1,3 +1,59 @@
+use sqlx::MySqlPool;
+use uuid::Uuid;
+
+use crate::repository::room_repository;
+
+pub const MAX_ROOMS: i64 = 15;
+
+#[derive(Debug)]
+pub struct CreateRoomInput {
+    pub room_name: String,
+    pub quest_text: String,
+    pub answer: Option<String>,
+    pub hint_msg: Option<String>,
+    pub image_bytes: Option<Vec<u8>>,
+}
+
+#[derive(Debug)]
+pub enum RoomError {
+    MaxRoomsReached,
+    AnswerRequired,
+    NotFound,
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for RoomError {
+    fn from(err: sqlx::Error) -> Self {
+        Self::Database(err)
+    }
+}
+
+pub async fn create(
+    pool: &MySqlPool,
+    event_id: i32,
+    input: CreateRoomInput,
+) -> Result<i32, RoomError> {
+    if room_repository::count(pool, event_id).await? >= MAX_ROOMS {
+        return Err(RoomError::MaxRoomsReached);
+    }
+
+    let answer = input.answer.as_deref();
+    let hint_msg = input.hint_msg.as_deref();
+
+    room_repository::insert(
+        pool,
+        event_id,
+        &input.room_name,
+        &input.quest_text,
+        answer,
+        hint_msg,
+        None,
+        &Uuid::new_v4().to_string(),
+    )
+    .await
+    .map_err(RoomError::Database)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{CreateRoomInput, RoomError};
