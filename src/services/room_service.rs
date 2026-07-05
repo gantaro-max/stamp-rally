@@ -1,7 +1,10 @@
 use sqlx::MySqlPool;
 use uuid::Uuid;
 
-use crate::repository::{event_repository, room_repository};
+use crate::{
+    repository::{event_repository, room_image_repository, room_repository},
+    services::image_service,
+};
 
 pub const MAX_ROOMS: i64 = 15;
 
@@ -19,6 +22,7 @@ pub enum RoomError {
     MaxRoomsReached,
     AnswerRequired,
     NotFound,
+    Image(image_service::ImageError),
     Database(sqlx::Error),
 }
 
@@ -53,6 +57,21 @@ pub async fn create(
         (None, None)
     };
 
+    let image_id = if let Some(bytes) = input.image_bytes {
+        let processed = image_service::process_upload(&bytes).map_err(RoomError::Image)?;
+        Some(
+            room_image_repository::insert(
+                pool,
+                &Uuid::new_v4().to_string(),
+                &processed,
+                "image/jpeg",
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+
     room_repository::insert(
         pool,
         event_id,
@@ -60,7 +79,7 @@ pub async fn create(
         &input.quest_text,
         answer,
         hint_msg,
-        None,
+        image_id,
         &Uuid::new_v4().to_string(),
     )
     .await
