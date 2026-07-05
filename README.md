@@ -27,7 +27,7 @@ Rust（Axum + Tokio） / sqlx（MySQL） / Askama + Bootstrap 5 / Argon2 / LINE 
 
 1. VS Code でこのフォルダを開く
 2. 「Reopen in Container」を実行（`.devcontainer/` の設定に従って Rust + MySQL のコンテナが起動する）
-3. `.env.example` を `.env` にコピーし、値を設定する
+3. `.env.example` を `.env` にコピーし、値を設定する（`.env` が無い場合はコンテナ作成時に自動でコピーされるが、値は自分で埋める必要がある）
    ```bash
    cp .env.example .env
    ```
