@@ -81,4 +81,23 @@ mod tests {
         assert!(!event.is_team_mode);
         assert!(!event.require_answer_check);
     }
+
+    #[sqlx::test]
+    async fn does_not_seed_when_event_already_exists(pool: sqlx::MySqlPool) {
+        seed_admin_event_if_empty(&pool, "first-secret", "First Event")
+            .await
+            .unwrap();
+        let first = super::find_singleton(&pool).await.unwrap().unwrap();
+
+        seed_admin_event_if_empty(&pool, "second-secret", "Second Event")
+            .await
+            .unwrap();
+
+        assert_eq!(count(&pool).await.unwrap(), 1);
+        let current = super::find_singleton(&pool).await.unwrap().unwrap();
+        assert_eq!(current.id, first.id);
+        assert_eq!(current.event_name, "First Event");
+        assert!(verify_password("first-secret", &current.admin_pass_hash));
+        assert!(!verify_password("second-secret", &current.admin_pass_hash));
+    }
 }
