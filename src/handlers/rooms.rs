@@ -415,7 +415,6 @@ pub async fn qr(State(pool): State<MySqlPool>, AxumPath(id): AxumPath<i32>) -> R
     ([(header::CONTENT_TYPE, "image/png")], png).into_response()
 }
 
-
 #[cfg(test)]
 mod tests {
     use askama::Template;

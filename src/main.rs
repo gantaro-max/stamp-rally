@@ -4,7 +4,9 @@ mod repository;
 mod services;
 
 use axum::{
-    Router, extract::DefaultBodyLimit, middleware as axum_middleware,
+    Router,
+    extract::DefaultBodyLimit,
+    middleware as axum_middleware,
     routing::{get, post},
 };
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
@@ -203,7 +205,9 @@ mod tests {
     fn room_upload_limit_test_app() -> Router {
         Router::new()
             .route("/test/upload", post(consume_multipart_upload))
-            .layer(axum::extract::DefaultBodyLimit::max(super::ROOM_MULTIPART_BODY_LIMIT))
+            .layer(axum::extract::DefaultBodyLimit::max(
+                super::ROOM_MULTIPART_BODY_LIMIT,
+            ))
     }
 
     fn test_pool() -> sqlx::MySqlPool {

@@ -18,7 +18,9 @@ pub fn process_upload(bytes: &[u8]) -> Result<Vec<u8>, ImageError> {
     }
 
     let format = match image::guess_format(bytes) {
-        Ok(image::ImageFormat::Jpeg | image::ImageFormat::Png) => image::guess_format(bytes).unwrap(),
+        Ok(image::ImageFormat::Jpeg | image::ImageFormat::Png) => {
+            image::guess_format(bytes).unwrap()
+        }
         _ => return Err(ImageError::InvalidFormat),
     };
 
