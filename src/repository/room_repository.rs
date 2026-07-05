@@ -205,4 +205,25 @@ mod tests {
         assert_eq!(room.hint_msg.as_deref(), Some("new hint"));
         assert_eq!(room.image_id, None);
     }
+
+    #[sqlx::test]
+    async fn deletes_room(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let room_id = super::insert(
+            &pool,
+            event_id,
+            "Room to delete",
+            "Quest",
+            None,
+            None,
+            None,
+            "qr-delete-1",
+        )
+        .await
+        .unwrap();
+
+        super::delete(&pool, room_id).await.unwrap();
+
+        assert!(super::find_by_id(&pool, room_id).await.unwrap().is_none());
+    }
 }
