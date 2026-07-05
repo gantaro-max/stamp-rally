@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/rust:1.85-bookworm
+FROM mcr.microsoft.com/devcontainers/rust:1-bookworm
 
 WORKDIR /app
 
