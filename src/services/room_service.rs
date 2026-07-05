@@ -41,6 +41,20 @@ impl From<sqlx::Error> for RoomError {
     }
 }
 
+impl std::fmt::Display for RoomError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MaxRoomsReached => f.write_str("room limit reached"),
+            Self::AnswerRequired => f.write_str("answer required"),
+            Self::NotFound => f.write_str("room not found"),
+            Self::Image(err) => write!(f, "image error: {err:?}"),
+            Self::Database(err) => write!(f, "database error: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for RoomError {}
+
 pub async fn create(
     pool: &MySqlPool,
     event_id: i32,
@@ -95,11 +109,7 @@ pub async fn create(
     .map_err(RoomError::Database)
 }
 
-pub async fn update(
-    pool: &MySqlPool,
-    id: i32,
-    input: UpdateRoomInput,
-) -> Result<(), RoomError> {
+pub async fn update(pool: &MySqlPool, id: i32, input: UpdateRoomInput) -> Result<(), RoomError> {
     let Some(existing) = room_repository::find_by_id(pool, id).await? else {
         return Err(RoomError::NotFound);
     };
@@ -164,12 +174,19 @@ pub async fn delete(pool: &MySqlPool, id: i32) -> Result<(), RoomError> {
     Ok(())
 }
 
-pub async fn list(pool: &MySqlPool, event_id: i32) -> Result<Vec<room_repository::Room>, RoomError> {
-    room_repository::find_all(pool, event_id).await.map_err(RoomError::Database)
+pub async fn list(
+    pool: &MySqlPool,
+    event_id: i32,
+) -> Result<Vec<room_repository::Room>, RoomError> {
+    room_repository::find_all(pool, event_id)
+        .await
+        .map_err(RoomError::Database)
 }
 
 pub async fn get(pool: &MySqlPool, id: i32) -> Result<Option<room_repository::Room>, RoomError> {
-    room_repository::find_by_id(pool, id).await.map_err(RoomError::Database)
+    room_repository::find_by_id(pool, id)
+        .await
+        .map_err(RoomError::Database)
 }
 
 #[cfg(test)]
@@ -181,9 +198,13 @@ mod tests {
     use super::{CreateRoomInput, RoomError};
 
     async fn seed_event(pool: &sqlx::MySqlPool) -> i32 {
-        crate::services::auth_service::seed_admin_event_if_empty(pool, "admin-secret", "Stamp Rally")
-            .await
-            .unwrap();
+        crate::services::auth_service::seed_admin_event_if_empty(
+            pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
         crate::repository::event_repository::find_singleton(pool)
             .await
             .unwrap()
@@ -231,7 +252,12 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(err, RoomError::MaxRoomsReached));
-        assert_eq!(crate::repository::room_repository::count(&pool, event_id).await.unwrap(), 15);
+        assert_eq!(
+            crate::repository::room_repository::count(&pool, event_id)
+                .await
+                .unwrap(),
+            15
+        );
     }
 
     #[sqlx::test]
@@ -248,7 +274,12 @@ mod tests {
             .unwrap_err();
 
         assert!(matches!(err, RoomError::AnswerRequired));
-        assert_eq!(crate::repository::room_repository::count(&pool, event_id).await.unwrap(), 0);
+        assert_eq!(
+            crate::repository::room_repository::count(&pool, event_id)
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     #[sqlx::test]
@@ -396,10 +427,12 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        assert!(crate::repository::room_repository::find_by_id(&pool, room_id)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            crate::repository::room_repository::find_by_id(&pool, room_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(image_count, 0);
     }
 }
