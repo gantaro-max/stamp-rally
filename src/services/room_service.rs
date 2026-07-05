@@ -47,6 +47,11 @@ pub async fn create(
     if require_answer_check && answer.is_none_or(|value| value.trim().is_empty()) {
         return Err(RoomError::AnswerRequired);
     }
+    let (answer, hint_msg) = if require_answer_check {
+        (answer, hint_msg)
+    } else {
+        (None, None)
+    };
 
     room_repository::insert(
         pool,
