@@ -151,6 +151,27 @@ pub async fn update(
     Ok(())
 }
 
+pub async fn delete(pool: &MySqlPool, id: i32) -> Result<(), RoomError> {
+    let Some(existing) = room_repository::find_by_id(pool, id).await? else {
+        return Err(RoomError::NotFound);
+    };
+
+    if let Some(image_id) = existing.image_id {
+        room_image_repository::delete(pool, image_id).await?;
+    }
+    room_repository::delete(pool, id).await?;
+
+    Ok(())
+}
+
+pub async fn list(pool: &MySqlPool, event_id: i32) -> Result<Vec<room_repository::Room>, RoomError> {
+    room_repository::find_all(pool, event_id).await.map_err(RoomError::Database)
+}
+
+pub async fn get(pool: &MySqlPool, id: i32) -> Result<Option<room_repository::Room>, RoomError> {
+    room_repository::find_by_id(pool, id).await.map_err(RoomError::Database)
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;

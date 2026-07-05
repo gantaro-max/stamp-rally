@@ -88,6 +88,35 @@ pub async fn delete(pool: &MySqlPool, id: i32) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
+pub async fn find_all(pool: &MySqlPool, event_id: i32) -> Result<Vec<Room>, sqlx::Error> {
+    let rows = sqlx::query(
+        r#"
+        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid
+        FROM rooms
+        WHERE event_id = ?
+        ORDER BY id
+        "#,
+    )
+    .bind(event_id)
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(Room {
+                id: row.try_get("id")?,
+                event_id: row.try_get("event_id")?,
+                room_name: row.try_get("room_name")?,
+                quest_text: row.try_get("quest_text")?,
+                answer: row.try_get("answer")?,
+                hint_msg: row.try_get("hint_msg")?,
+                image_id: row.try_get("image_id")?,
+                qr_uuid: row.try_get("qr_uuid")?,
+            })
+        })
+        .collect()
+}
+
 pub async fn find_by_id(pool: &MySqlPool, id: i32) -> Result<Option<Room>, sqlx::Error> {
     let Some(row) = sqlx::query(
         r#"
