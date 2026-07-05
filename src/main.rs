@@ -4,13 +4,15 @@ mod repository;
 mod services;
 
 use axum::{
-    Router, middleware as axum_middleware,
+    Router, extract::DefaultBodyLimit, middleware as axum_middleware,
     routing::{get, post},
 };
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
 use std::{env, net::SocketAddr, process};
 use time::Duration;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
+
+const ROOM_MULTIPART_BODY_LIMIT: usize = services::image_service::MAX_UPLOAD_BYTES + 64 * 1024;
 
 #[tokio::main]
 async fn main() {
@@ -92,6 +94,7 @@ fn app_router(pool: MySqlPool) -> Router {
         .route("/rooms/update/{id}", post(handlers::rooms::update))
         .route("/rooms/delete/{id}", post(handlers::rooms::delete))
         .route("/rooms/{id}/qr", get(handlers::rooms::qr))
+        .layer(DefaultBodyLimit::max(ROOM_MULTIPART_BODY_LIMIT))
         .route_layer(axum_middleware::from_fn(
             middleware::require_admin::require_admin,
         ));
@@ -198,7 +201,9 @@ mod tests {
     }
 
     fn room_upload_limit_test_app() -> Router {
-        Router::new().route("/test/upload", post(consume_multipart_upload))
+        Router::new()
+            .route("/test/upload", post(consume_multipart_upload))
+            .layer(axum::extract::DefaultBodyLimit::max(super::ROOM_MULTIPART_BODY_LIMIT))
     }
 
     fn test_pool() -> sqlx::MySqlPool {
