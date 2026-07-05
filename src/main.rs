@@ -239,4 +239,23 @@ mod tests {
             assert_eq!(response.status(), StatusCode::FORBIDDEN);
         }
     }
+
+    #[tokio::test]
+    async fn admin_dashboard_redirects_when_not_logged_in() {
+        let response = app_router(test_pool())
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/dashboard")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/auth/login"
+        );
+    }
 }
