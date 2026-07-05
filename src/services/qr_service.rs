@@ -1,3 +1,17 @@
+use std::io::Cursor;
+
+use qrcode::QrCode;
+
+pub fn render_png(value: &str) -> Vec<u8> {
+    let code = QrCode::new(value.as_bytes()).expect("QR code generation should not fail");
+    let image = code.render::<image::Luma<u8>>().build();
+    let mut output = Cursor::new(Vec::new());
+    image::DynamicImage::ImageLuma8(image)
+        .write_to(&mut output, image::ImageFormat::Png)
+        .expect("PNG encoding should not fail");
+    output.into_inner()
+}
+
 #[cfg(test)]
 mod tests {
     use super::render_png;
