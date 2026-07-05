@@ -110,4 +110,26 @@ mod tests {
         assert_eq!(room.image_id, None);
         assert_eq!(room.qr_uuid, "qr-uuid-1");
     }
+
+    #[sqlx::test]
+    async fn counts_rooms_for_event(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+
+        for index in 0..2 {
+            super::insert(
+                &pool,
+                event_id,
+                &format!("Room {index}"),
+                "Quest",
+                None,
+                None,
+                None,
+                &format!("qr-count-{index}"),
+            )
+            .await
+            .unwrap();
+        }
+
+        assert_eq!(super::count(&pool, event_id).await.unwrap(), 2);
+    }
 }
