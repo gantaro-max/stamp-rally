@@ -30,8 +30,10 @@ pub async fn seed_admin_event_if_empty(
     admin_password: &str,
     event_name: &str,
 ) -> Result<(), sqlx::Error> {
-    let admin_pass_hash = hash_password(admin_password);
-    event_repository::insert_initial(pool, event_name, &admin_pass_hash).await?;
+    if event_repository::count(pool).await? == 0 {
+        let admin_pass_hash = hash_password(admin_password);
+        event_repository::insert_initial(pool, event_name, &admin_pass_hash).await?;
+    }
 
     Ok(())
 }
