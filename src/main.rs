@@ -511,8 +511,8 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body = String::from_utf8(body.to_vec()).unwrap();
-        assert!(body.contains(r#"action=\"/admin/rooms/add\""#));
-        assert!(body.contains(r#"name=\"csrf_token\""#));
+        assert!(body.contains(r#"action="/admin/rooms/add""#));
+        assert!(body.contains(r#"name="csrf_token""#));
     }
 
     #[sqlx::test]
