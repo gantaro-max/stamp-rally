@@ -58,11 +58,49 @@ fn app_router(pool: MySqlPool) -> Router {
 mod tests {
     use super::app_router;
     use axum::{
+        Router,
         body::{Body, to_bytes},
-        http::{Request, StatusCode},
+        http::{Request, StatusCode, header},
     };
     use sqlx::mysql::MySqlPoolOptions;
     use tower::ServiceExt;
+
+    fn extract_cookie(response: &axum::response::Response) -> String {
+        response
+            .headers()
+            .get(header::SET_COOKIE)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string()
+    }
+
+    fn extract_csrf_token(body: &str) -> String {
+        let marker = r#"name="csrf_token" value=""#;
+        let start = body.find(marker).unwrap() + marker.len();
+        let rest = &body[start..];
+        let end = rest.find('\"').unwrap();
+        rest[..end].to_string()
+    }
+
+    async fn get_login_cookie_and_csrf(app: Router) -> (String, String) {
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/auth/login")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let cookie = extract_cookie(&response);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        (cookie, extract_csrf_token(&body))
+    }
 
     fn test_pool() -> sqlx::MySqlPool {
         MySqlPoolOptions::new()
@@ -106,5 +144,40 @@ mod tests {
         let body = String::from_utf8(body.to_vec()).unwrap();
         assert!(body.contains(r#"action="/auth/login""#));
         assert!(body.contains(r#"name="csrf_token""#));
+    }
+
+    #[sqlx::test]
+    async fn login_with_correct_password_redirects_and_sets_session(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool);
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/admin/dashboard"
+        );
+        assert!(response.headers().get(header::SET_COOKIE).is_some());
     }
 }
