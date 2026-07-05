@@ -182,8 +182,9 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 
 ## 5. QRコードの仕組み
 
-- 部屋登録時に `qr_uuid` を発行し、`qrcode` crate でQR画像を生成
-- 管理画面（`/admin/rooms`）で部屋ごとのQR画像を表示・印刷用に出力し、スタッフが現地で保持・提示する
+- 部屋登録時に `qr_uuid`（UUID v4）を発行してDBに保存する（QR画像自体はDBに保存しない）
+- 管理画面 `GET /admin/rooms/{id}/qr` にアクセスするたびに、`qrcode` crate で `qr_uuid` の文字列をその場でPNGにエンコードして返す（`Content-Type: image/png`、`require_admin` 経由で保護）。印刷はスタッフがブラウザの印刷機能を使う想定で、専用の印刷レイアウトは用意しない
+- QRコードの中身（LIFFがスキャンして取得する文字列）は `qr_uuid` そのもの。URLなどでラップしない
 - LIFFアプリの「QRを読む」ボタンから `liff.scanCodeV2()` を呼び出し、読み取ったUUIDを `/liff/checkin` にPOST
 - サーバ側の検証項目：
   1. UUIDが有効な部屋のものか
@@ -198,4 +199,25 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 - 画像はDB（`room_images.data`）にLONGBLOBで保存（MysteryBot踏襲）
 - アップロード時にUUIDを生成し、公開URLは `/public/image/{uuid}`
 - 認証不要エンドポイント（LINE BotのFlex Messageから直接参照されるため）
-- アップロード時に `image` crateで800px幅・JPEG 80%品質にリサイズ
+- アップロード時に `image` crateで800px幅・JPEG 80%品質にリサイズし、`mime_type` は常に `image/jpeg` を保存する（入力フォーマットによらず出力を統一する）
+
+### 画像アップロードの検証
+
+- アップロードサイズ上限: 5MB（リサイズ前の生データ）。超過時はアップロードを拒否する
+- 拡張子は見ず、`image` crateの `image::guess_format` でマジックバイトから実フォーマットを判定する
+- 許可フォーマット: JPEG, PNG のみ（それ以外はデコードを試みず拒否する）
+- 判定・デコードに成功した画像のみリサイズして保存する
+
+---
+
+## 7. 部屋（チェックポイント）管理の実装方針
+
+- 新規登録時、既存の部屋数が15件に達している場合は登録を拒否する（イベントあたり最大15部屋。`docs/requirements.md` 参照）
+- `require_answer_check`（判定モード）は `events` の該当イベント1行を参照して判定する
+  - `true` の場合のみ `answer`（正解）を必須項目として扱う。`hint_msg` は任意
+  - `false` の場合、フォームに正解・ヒント欄を表示しない。仮に送信されても `answer` / `hint_msg` は保存せず常にNULLとする（クライアントの申告を信用しない）
+- 画像を伴う登録・更新は `multipart/form-data` で受け取る。画像が添付されていない場合は画像なしで登録できる（`docs/requirements.md`：画像は任意）
+- 部屋の画像を更新する場合、新しい `room_images` 行を作成して `rooms.image_id` を張り替え、更新前に参照されていた `room_images` 行は削除する（孤立データを残さない）
+- 部屋を削除する場合、`rooms` 行の削除に合わせて、参照していた `room_images` 行も削除する（`visited_rooms` は既存の `ON DELETE CASCADE` で自動的に削除される）
+- 部屋一覧・登録・編集・削除・QR表示はすべて `/admin/*` 配下（`require_admin` 済み）。フォームは既存の `csrf_service`（セッション格納トークンとのダブルサブミット）を再利用する
+- 管理画面のAskamaテンプレートは `templates/admin/_base.html` を共通レイアウト（Bootstrap 5のナビゲーション等）として `{% extends %}` で利用する。今後追加する設定画面・ランキング画面もこのレイアウトに乗せる（`templates/auth/login.html` はログイン前の独立画面のため対象外のまま）
