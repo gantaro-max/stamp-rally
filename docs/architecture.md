@@ -62,9 +62,31 @@ Handler(Axum) → Service → Repository（sqlx） → DB
 
 ### 認証方式
 
-- Cookieベースのセッション（`tower-sessions` 等を利用）
+- Cookieベースのセッション（`tower-sessions`）
 - 管理者ログインのみ（プレイヤーはLINEアカウントのみで識別、Webログイン不要）
 - CSRF保護（`/callback` と `/liff/checkin` は除外）
+
+#### セッション実装
+
+- `tower_sessions::SessionManagerLayer` + `tower_sessions::MemoryStore` を全体（`/auth/*`・`/admin/*`）に適用する
+  - 管理者は1名のみの運用のため、プロセス再起動でセッションが失われても再ログインで足りる（永続ストアは採用しない）
+- セッションの有効期限は非アクティブ12時間（`Expiry::OnInactivity`）
+- ログイン成功時にセッションへ `admin_authenticated = true` を保存する
+- `/admin/*` と `POST /auth/logout` は、セッションに `admin_authenticated = true` が無ければ `/auth/login` へ302リダイレクトする専用ミドルウェア（`require_admin`）を通す
+
+#### CSRF実装
+
+- 署名付きトークンやCSRF専用クレートは導入せず、セッションに保存したランダムトークン（UUID v4）とフォームの隠しフィールドを突き合わせるダブルサブミット方式とする
+- `GET` でフォームを表示する際にセッションにトークンが無ければ発行し、隠しフィールド `csrf_token` に埋め込む
+- 対応する `POST` ハンドラーで、フォームの `csrf_token` とセッション内の値が一致することを検証する（不一致は403）
+- `/callback` と `/liff/checkin` はセッション自体を使わないため、この検証の対象外（設計上そもそも対象にならない）
+
+#### 起動時シード処理（管理者パスワード）
+
+- `events` テーブルは本運用では1行のみ（複数イベント対応は将来拡張）
+- アプリ起動時（`main.rs`）に `events` の行数を確認し、0件であれば環境変数 `ADMIN_PASSWORD` をArgon2でハッシュ化した上で初期の1行（`event_name` はデフォルト値、`is_team_mode = false`, `require_answer_check = false`）を作成する
+- 既に1行以上存在する場合はシードを行わない（`ADMIN_PASSWORD` は無視される。パスワード変更機能は将来の拡張とし今回のスコープ外）
+- `events` が0件かつ `ADMIN_PASSWORD` 未設定の場合はエラーを出力してプロセスを終了する（`DATABASE_URL` 未設定時と同様の扱い）
 
 ---
 
