@@ -69,6 +69,10 @@ pub async fn create(
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
+    use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb};
+
     use super::{CreateRoomInput, RoomError};
 
     async fn seed_event(pool: &sqlx::MySqlPool) -> i32 {
@@ -90,6 +94,13 @@ mod tests {
             hint_msg: None,
             image_bytes: None,
         }
+    }
+
+    fn png_bytes() -> Vec<u8> {
+        let image = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(32, 32, Rgb([10, 20, 30])));
+        let mut output = Cursor::new(Vec::new());
+        image.write_to(&mut output, ImageFormat::Png).unwrap();
+        output.into_inner()
     }
 
     #[sqlx::test]
@@ -158,5 +169,37 @@ mod tests {
             .unwrap();
         assert_eq!(room.answer, None);
         assert_eq!(room.hint_msg, None);
+    }
+
+    #[sqlx::test]
+    async fn create_with_image_stores_room_image(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+
+        let room_id = super::create(
+            &pool,
+            event_id,
+            CreateRoomInput {
+                room_name: "Image Room".to_string(),
+                quest_text: "Quest".to_string(),
+                answer: None,
+                hint_msg: None,
+                image_bytes: Some(png_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let room = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let image_id = room.image_id.unwrap();
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
+            .bind(image_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(count, 1);
     }
 }
