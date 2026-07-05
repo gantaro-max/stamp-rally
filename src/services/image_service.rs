@@ -1,3 +1,18 @@
+pub const MAX_UPLOAD_BYTES: usize = 5 * 1024 * 1024;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ImageError {
+    TooLarge,
+}
+
+pub fn process_upload(bytes: &[u8]) -> Result<Vec<u8>, ImageError> {
+    if bytes.len() > MAX_UPLOAD_BYTES {
+        return Err(ImageError::TooLarge);
+    }
+
+    Ok(Vec::new())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ImageError, process_upload};
