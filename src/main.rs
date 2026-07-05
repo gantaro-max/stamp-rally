@@ -563,6 +563,63 @@ mod tests {
         assert_eq!(crate::repository::room_repository::count(&pool, event_id).await.unwrap(), 1);
     }
 
+    #[sqlx::test]
+    async fn post_room_add_rejects_invalid_csrf(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        for csrf_part in ["", "--room-boundary\r\nContent-Disposition: form-data; name=\"csrf_token\"\r\n\r\nwrong\r\n"] {
+            let boundary = "room-boundary";
+            let body = format!(
+                "{csrf_part}--{boundary}\r\nContent-Disposition: form-data; name=\"room_name\"\r\n\r\nLibrary\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"quest_text\"\r\n\r\nFind a book\r\n--{boundary}--\r\n"
+            );
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/admin/rooms/add")
+                        .header(header::CONTENT_TYPE, format!("multipart/form-data; boundary={boundary}"))
+                        .header(header::COOKIE, session_cookie.clone())
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
+        assert_eq!(crate::repository::room_repository::count(&pool, event_id).await.unwrap(), 0);
+    }
+
     #[tokio::test]
     async fn logout_redirects_when_not_logged_in() {
         let response = app_router(test_pool())
