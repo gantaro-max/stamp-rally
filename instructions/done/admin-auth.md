@@ -4,7 +4,7 @@
 
 現状、アプリには `GET /health` の疎通確認ハンドラーしか存在しない。今後実装する部屋管理・ランキング等の管理画面（`/admin/*`）はすべて管理者セッション認証を前提とするため、まずその土台となる認証機能を実装する。
 
-[architecture.md](../docs/architecture.md) の「認証方式」「セッション実装」「CSRF実装」「起動時シード処理」で決定した方針に基づき、以下を実装する。
+[architecture.md](../../docs/architecture.md) の「認証方式」「セッション実装」「CSRF実装」「起動時シード処理」で決定した方針に基づき、以下を実装する。
 
 - アプリ起動時、`events` テーブルが空であれば `ADMIN_PASSWORD` 環境変数からArgon2ハッシュを生成し初期の1行をシードする
 - `POST /auth/login` によるログイン（セッションCookie発行）
@@ -35,7 +35,7 @@
 
 ## テストケース（TDDの起点）
 
-[AGENTS.md](../AGENTS.md) のTDD規約に従い、以下の順にRed-Green-Refactorを回す。DBに依存するテスト（`event_repository`）は `sqlx::test` を使うこと。
+[AGENTS.md](../../AGENTS.md) のTDD規約に従い、以下の順にRed-Green-Refactorを回す。DBに依存するテスト（`event_repository`）は `sqlx::test` を使うこと。
 
 - [ ] ケース1: `auth_service` のパスワードハッシュ化・検証が正しく往復する（平文一致で `true`、不一致で `false`。ハッシュ値自体は平文と異なる）
 - [ ] ケース2: `events` テーブルが0件の状態でシード処理を実行すると、`ADMIN_PASSWORD` をArgon2ハッシュ化した1行が作成される
