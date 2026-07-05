@@ -57,12 +57,15 @@ mod tests {
     use sqlx::mysql::MySqlPoolOptions;
     use tower::ServiceExt;
 
+    fn test_pool() -> sqlx::MySqlPool {
+        MySqlPoolOptions::new()
+            .connect_lazy("mysql://user:password@localhost/database")
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn app_router_registers_health_route() {
-        let pool = MySqlPoolOptions::new()
-            .connect_lazy("mysql://user:password@localhost/database")
-            .unwrap();
-        let response = app_router(pool)
+        let response = app_router(test_pool())
             .oneshot(
                 Request::builder()
                     .uri("/health")
@@ -76,5 +79,25 @@ mod tests {
 
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         assert_eq!(&body[..], b"ok");
+    }
+
+    #[tokio::test]
+    async fn login_form_returns_post_form_with_csrf_token() {
+        let response = app_router(test_pool())
+            .oneshot(
+                Request::builder()
+                    .uri("/auth/login")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains(r#"action="/auth/login""#));
+        assert!(body.contains(r#"name="csrf_token""#));
     }
 }
