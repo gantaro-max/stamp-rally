@@ -68,10 +68,11 @@ Handler(Axum) → Service → Repository（sqlx） → DB
 
 #### セッション実装
 
-- `tower_sessions::SessionManagerLayer` + `tower_sessions::MemoryStore` を全体（`/auth/*`・`/admin/*`）に適用する
+- `tower_sessions::SessionManagerLayer` + `tower_sessions::MemoryStore` をルーター全体に適用する
   - 管理者は1名のみの運用のため、プロセス再起動でセッションが失われても再ログインで足りる（永続ストアは採用しない）
+  - 現時点では `/health` `/auth/*` `/admin/*` にのみ影響する。今後 `/callback`（LINE Webhook）や `/liff/checkin` を追加する際、これらはセッションを利用しない想定のため、レイヤーの適用範囲をルーター全体のままにするか、`/auth`・`/admin` 配下に絞るかを実装指示書作成時に改めて検討する
 - セッションの有効期限は非アクティブ12時間（`Expiry::OnInactivity`）
-- ログイン成功時にセッションへ `admin_authenticated = true` を保存する
+- ログイン成功時にセッションへ `admin_authenticated = true` を保存し、あわせてセッションIDをローテーションする（`tower_sessions::Session::cycle_id()`。session fixation対策）
 - `/admin/*` と `POST /auth/logout` は、セッションに `admin_authenticated = true` が無ければ `/auth/login` へ302リダイレクトする専用ミドルウェア（`require_admin`）を通す
 
 #### CSRF実装

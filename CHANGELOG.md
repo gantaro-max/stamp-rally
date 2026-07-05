@@ -5,6 +5,12 @@
 ## [Unreleased]
 
 ### Added
+- 管理者認証機能（ログイン・ログアウト）を追加（#3）
+  - Cookieベースのセッション（`tower-sessions` / `MemoryStore`、非アクティブ12時間で失効）
+  - セッションに保存したトークンとフォーム隠しフィールドを突き合わせるCSRF対策（ダブルサブミット方式）
+  - ログイン成功時のセッションIDローテーション（session fixation対策）
+  - アプリ起動時、`events` が空であれば `ADMIN_PASSWORD` をArgon2ハッシュ化して初期シード
+  - `/admin/*` と `POST /auth/logout` を保護する `require_admin` ミドルウェア、`GET /admin/dashboard` の保護動作確認用プレースホルダー
 - プロジェクトの土台となる設計ドキュメント一式（要件定義・アーキテクチャ・DB設計・API設計・運営マニュアル）を `docs/` 配下に作成
 - Claude（PM/設計）とCodex（実装）の役割分担、TDD（Red-Green-Refactor）運用、`feature/*` ブランチ＋PRによるブランチ運用ポリシーを `CLAUDE.md` / `AGENTS.md` に整備
 - devcontainer構成（Rust + MySQL 8.0）を追加
