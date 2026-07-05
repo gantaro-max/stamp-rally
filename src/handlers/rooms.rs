@@ -414,3 +414,29 @@ pub async fn qr(State(pool): State<MySqlPool>, AxumPath(id): AxumPath<i32>) -> R
 
     ([(header::CONTENT_TYPE, "image/png")], png).into_response()
 }
+
+
+#[cfg(test)]
+mod tests {
+    use askama::Template;
+
+    use super::RoomAddTemplate;
+
+    #[test]
+    fn room_templates_include_logout_csrf_token() {
+        let template = RoomAddTemplate {
+            csrf_token: "logout-csrf".to_string(),
+            require_answer_check: false,
+            room_name: String::new(),
+            quest_text: String::new(),
+            answer: String::new(),
+            hint_msg: String::new(),
+            error_message: None,
+        };
+
+        let body = template.render().unwrap();
+
+        assert!(body.contains(r#"action="/auth/logout""#));
+        assert!(body.contains(r#"name="csrf_token" value="logout-csrf""#));
+    }
+}

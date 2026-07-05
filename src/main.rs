@@ -190,6 +190,17 @@ mod tests {
             .layer(session_layer)
     }
 
+    async fn consume_multipart_upload(mut multipart: axum::extract::Multipart) -> StatusCode {
+        while let Some(field) = multipart.next_field().await.unwrap() {
+            let _ = field.bytes().await.unwrap();
+        }
+        StatusCode::OK
+    }
+
+    fn room_upload_limit_test_app() -> Router {
+        Router::new().route("/test/upload", post(consume_multipart_upload))
+    }
+
     fn test_pool() -> sqlx::MySqlPool {
         MySqlPoolOptions::new()
             .connect_lazy("mysql://user:password@localhost/database")
@@ -361,6 +372,35 @@ mod tests {
             response.headers().get(header::LOCATION).unwrap(),
             "/auth/login"
         );
+    }
+
+    #[tokio::test]
+    async fn room_upload_routes_accept_multipart_larger_than_axum_default() {
+        let app = room_upload_limit_test_app();
+        let boundary = "large-room-upload";
+        let mut body = Vec::new();
+        body.extend_from_slice(
+            format!("--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"room.png\"\r\nContent-Type: image/png\r\n\r\n").as_bytes(),
+        );
+        body.extend(vec![b'a'; 2 * 1024 * 1024 + 1]);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/test/upload")
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_ne!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
     #[sqlx::test]
