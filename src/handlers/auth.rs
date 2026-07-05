@@ -21,7 +21,7 @@ struct LoginTemplate {
 #[derive(Deserialize)]
 pub struct LoginForm {
     password: String,
-    csrf_token: String,
+    csrf_token: Option<String>,
 }
 
 pub async fn login_form(session: Session) -> Response {
@@ -33,6 +33,10 @@ pub async fn login(
     session: Session,
     Form(form): Form<LoginForm>,
 ) -> Response {
+    if !csrf_service::verify_token(&session, form.csrf_token.as_deref().unwrap_or("")).await {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
     match auth_service::try_login(&pool, &form.password).await {
         Ok(true) => {
             if session.insert("admin_authenticated", true).await.is_err() {
