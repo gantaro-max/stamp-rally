@@ -3,6 +3,7 @@ pub const MAX_UPLOAD_BYTES: usize = 5 * 1024 * 1024;
 #[derive(Debug, PartialEq, Eq)]
 pub enum ImageError {
     TooLarge,
+    InvalidFormat,
 }
 
 pub fn process_upload(bytes: &[u8]) -> Result<Vec<u8>, ImageError> {
@@ -10,7 +11,10 @@ pub fn process_upload(bytes: &[u8]) -> Result<Vec<u8>, ImageError> {
         return Err(ImageError::TooLarge);
     }
 
-    Ok(Vec::new())
+    match image::guess_format(bytes) {
+        Ok(image::ImageFormat::Jpeg | image::ImageFormat::Png) => Ok(Vec::new()),
+        _ => Err(ImageError::InvalidFormat),
+    }
 }
 
 #[cfg(test)]
