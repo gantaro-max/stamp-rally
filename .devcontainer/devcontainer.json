@@ -12,7 +12,7 @@
     },
     "remoteUser": "vscode",
     "updateRemoteUserUID": true,
-    "postCreateCommand": "sudo chown -R vscode /usr/local/cargo/registry && sudo chown -R vscode /app/target",
+    "postCreateCommand": "sudo chown -R vscode /usr/local/cargo/registry /app/target && (test -f .env || cp .env.example .env)",
     "customizations": {
         "vscode": {
             "extensions": [
