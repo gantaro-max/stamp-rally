@@ -70,7 +70,10 @@ pub async fn logout(session: Session, Form(form): Form<LogoutForm>) -> Response 
 }
 
 async fn render_login(session: Session, error_message: Option<&'static str>) -> Response {
-    let csrf_token = csrf_service::issue_token(&session).await;
+    let csrf_token = match csrf_service::issue_token(&session).await {
+        Ok(token) => token,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
     let template = LoginTemplate {
         csrf_token,
         error_message,
