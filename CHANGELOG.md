@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- イベント設定画面を追加（#7）
+  - `GET /admin/settings`：現在の個人戦/チーム戦・判定モードを反映したフォームを表示
+  - `POST /admin/settings`：`event_service`経由で `events.is_team_mode` / `events.require_answer_check` を更新（チェックボックス未送信時は `false` として扱う）
+  - 設定変更は既存の `rooms`（`answer`/`hint_msg`）や `players` の進行状況を遡及的に書き換えない（次回の判定・部屋案内から反映される）
+  - 管理画面ナビゲーションに「設定」リンクを追加
 - LIFFチェックイン・ゴール判定機能を追加（#6）
   - `GET /liff/checkin`：LIFF SDKでQRコードをスキャンするページ（LINEチャットにはPush Messageで案内するため、ページ自体はチェックイン結果のステータス表示のみ）
   - `POST /liff/checkin`：LINEのIDトークン検証エンドポイント（`https://api.line.me/oauth2/v2.1/verify`）でLINEユーザーIDを検証してから、クライアント申告を信用せずサーバ側でチェックインを判定（部屋の存在・参加登録済みか・クリア済みでないか・案内された部屋と一致するか・判定モードが「QR＋正解入力」の場合は正解済みか、の順に検証）
