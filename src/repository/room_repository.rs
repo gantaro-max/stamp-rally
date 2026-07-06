@@ -145,6 +145,46 @@ pub async fn find_by_id(pool: &MySqlPool, id: i32) -> Result<Option<Room>, sqlx:
     }))
 }
 
+pub async fn find_random_unvisited(
+    pool: &MySqlPool,
+    event_id: i32,
+    player_id: i32,
+) -> Result<Option<Room>, sqlx::Error> {
+    let Some(row) = sqlx::query(
+        r#"
+        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid
+        FROM rooms
+        WHERE event_id = ?
+          AND NOT EXISTS (
+              SELECT 1
+              FROM visited_rooms
+              WHERE visited_rooms.player_id = ?
+                AND visited_rooms.room_id = rooms.id
+          )
+        ORDER BY RAND()
+        LIMIT 1
+        "#,
+    )
+    .bind(event_id)
+    .bind(player_id)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(Room {
+        id: row.try_get("id")?,
+        event_id: row.try_get("event_id")?,
+        room_name: row.try_get("room_name")?,
+        quest_text: row.try_get("quest_text")?,
+        answer: row.try_get("answer")?,
+        hint_msg: row.try_get("hint_msg")?,
+        image_id: row.try_get("image_id")?,
+        qr_uuid: row.try_get("qr_uuid")?,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     async fn seed_event(pool: &sqlx::MySqlPool) -> i32 {

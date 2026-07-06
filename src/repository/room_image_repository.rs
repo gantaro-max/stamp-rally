@@ -1,4 +1,4 @@
-use sqlx::MySqlPool;
+use sqlx::{MySqlPool, Row};
 
 pub async fn insert(
     pool: &MySqlPool,
@@ -30,6 +30,21 @@ pub async fn delete(pool: &MySqlPool, id: i32) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
+
+pub async fn find_by_uuid(
+    pool: &MySqlPool,
+    uuid: &str,
+) -> Result<Option<(Vec<u8>, String)>, sqlx::Error> {
+    let Some(row) = sqlx::query("SELECT data, mime_type FROM room_images WHERE uuid = ?")
+        .bind(uuid)
+        .fetch_optional(pool)
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some((row.try_get("data")?, row.try_get("mime_type")?)))
+}
 
 #[cfg(test)]
 mod tests {

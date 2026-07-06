@@ -1,3 +1,114 @@
+use chrono::NaiveDateTime;
+use sqlx::{MySqlPool, Row};
+
+#[allow(dead_code)]
+#[derive(Debug)]
+pub struct Player {
+    pub id: i32,
+    pub line_user_id: String,
+    pub event_id: i32,
+    pub player_name: String,
+    pub current_room_id: Option<i32>,
+    pub answer_verified: bool,
+    pub started_at: NaiveDateTime,
+    pub finished_at: Option<NaiveDateTime>,
+}
+
+pub async fn find_by_line_user_and_event(
+    pool: &MySqlPool,
+    line_user_id: &str,
+    event_id: i32,
+) -> Result<Option<Player>, sqlx::Error> {
+    let Some(row) = sqlx::query(
+        r#"
+        SELECT id, line_user_id, event_id, player_name, current_room_id, answer_verified, started_at, finished_at
+        FROM players
+        WHERE line_user_id = ? AND event_id = ?
+        "#,
+    )
+    .bind(line_user_id)
+    .bind(event_id)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(Player {
+        id: row.try_get("id")?,
+        line_user_id: row.try_get("line_user_id")?,
+        event_id: row.try_get("event_id")?,
+        player_name: row.try_get("player_name")?,
+        current_room_id: row.try_get("current_room_id")?,
+        answer_verified: row.try_get::<i8, _>("answer_verified")? != 0,
+        started_at: row.try_get("started_at")?,
+        finished_at: row.try_get("finished_at")?,
+    }))
+}
+
+pub async fn insert(
+    pool: &MySqlPool,
+    line_user_id: &str,
+    event_id: i32,
+    player_name: &str,
+) -> Result<i32, sqlx::Error> {
+    let result = sqlx::query(
+        r#"
+        INSERT INTO players (line_user_id, event_id, player_name, current_room_id, answer_verified, started_at, finished_at)
+        VALUES (?, ?, ?, NULL, FALSE, NOW(), NULL)
+        "#,
+    )
+    .bind(line_user_id)
+    .bind(event_id)
+    .bind(player_name)
+    .execute(pool)
+    .await?;
+
+    Ok(result.last_insert_id() as i32)
+}
+
+pub async fn update_current_room(
+    pool: &MySqlPool,
+    player_id: i32,
+    room_id: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE players SET current_room_id = ?, answer_verified = FALSE WHERE id = ?")
+        .bind(room_id)
+        .bind(player_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+pub async fn set_answer_verified(
+    pool: &MySqlPool,
+    player_id: i32,
+    verified: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE players SET answer_verified = ? WHERE id = ?")
+        .bind(verified)
+        .bind(player_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+pub async fn delete_by_line_user_and_event(
+    pool: &MySqlPool,
+    line_user_id: &str,
+    event_id: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM players WHERE line_user_id = ? AND event_id = ?")
+        .bind(line_user_id)
+        .bind(event_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     async fn seed_event(pool: &sqlx::MySqlPool) -> i32 {
