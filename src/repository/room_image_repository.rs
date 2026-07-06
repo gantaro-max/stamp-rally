@@ -31,6 +31,18 @@ pub async fn delete(pool: &MySqlPool, id: i32) -> Result<(), sqlx::Error> {
 }
 
 
+pub async fn find_uuid_by_id(pool: &MySqlPool, id: i32) -> Result<Option<String>, sqlx::Error> {
+    let Some(row) = sqlx::query("SELECT uuid FROM room_images WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(row.try_get("uuid")?))
+}
+
 pub async fn find_by_uuid(
     pool: &MySqlPool,
     uuid: &str,

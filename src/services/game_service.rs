@@ -1,3 +1,11 @@
+use std::{collections::HashSet, sync::{Arc, Mutex}};
+
+use sqlx::MySqlPool;
+
+use crate::repository::{event_repository, player_repository, room_image_repository, room_repository};
+
+pub type PendingRegistrations = Arc<Mutex<HashSet<String>>>;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReplyMessage {
     Text(String),
@@ -8,6 +16,192 @@ pub enum ReplyMessage {
     },
 }
 
+#[derive(Debug)]
+pub enum GameServiceError {
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for GameServiceError {
+    fn from(err: sqlx::Error) -> Self {
+        Self::Database(err)
+    }
+}
+
+pub async fn handle_text_message(
+    pool: &MySqlPool,
+    pending: &PendingRegistrations,
+    public_base_url: &str,
+    line_user_id: &str,
+    text: &str,
+) -> Result<ReplyMessage, GameServiceError> {
+    let text = text.trim();
+    let Some(event) = event_repository::find_singleton(pool).await? else {
+        return Ok(ReplyMessage::Text("イベントが設定されていません。管理者にお問い合わせください。".to_string()));
+    };
+    let player = player_repository::find_by_line_user_and_event(pool, line_user_id, event.id).await?;
+
+    if matches!(text, "遊び方" | "ヘルプ") {
+        return Ok(ReplyMessage::Text(help_text()));
+    }
+
+    if text == "リセット" {
+        let had_pending = was_pending_removed(pending, line_user_id);
+        if player.is_some() {
+            player_repository::delete_by_line_user_and_event(pool, line_user_id, event.id).await?;
+            return Ok(ReplyMessage::Text("参加データを削除しました。もう一度参加する場合は『開始』と送信してください。".to_string()));
+        }
+        return if had_pending {
+            Ok(ReplyMessage::Text("登録をキャンセルしました。".to_string()))
+        } else {
+            Ok(ReplyMessage::Text("現在参加登録されていません。".to_string()))
+        };
+    }
+
+    if text == "開始" {
+        if let Some(player) = player.as_ref() {
+            if player.finished_at.is_some() {
+                return Ok(ReplyMessage::Text("クリア済みです。最初の部屋に戻ってください。".to_string()));
+            }
+            return quest_reply_for_player(pool, public_base_url, player).await;
+        }
+        if is_pending(pending, line_user_id) {
+            return Ok(ReplyMessage::Text(name_prompt(event.is_team_mode)));
+        }
+        add_pending(pending, line_user_id);
+        return Ok(ReplyMessage::Text(name_prompt(event.is_team_mode)));
+    }
+
+    if player.is_none() && is_pending(pending, line_user_id) {
+        if text.is_empty() {
+            return Ok(ReplyMessage::Text(name_prompt(event.is_team_mode)));
+        }
+        if room_repository::count(pool, event.id).await? == 0 {
+            remove_pending(pending, line_user_id);
+            return Ok(ReplyMessage::Text("参加できる部屋が登録されていません。管理者にお問い合わせください。".to_string()));
+        }
+        let player_id = player_repository::insert(pool, line_user_id, event.id, text).await?;
+        remove_pending(pending, line_user_id);
+        let Some(room) = room_repository::find_random_unvisited(pool, event.id, player_id).await? else {
+            return Ok(ReplyMessage::Text("参加できる部屋が登録されていません。管理者にお問い合わせください。".to_string()));
+        };
+        player_repository::update_current_room(pool, player_id, room.id).await?;
+        return quest_reply_for_room(pool, public_base_url, &room).await;
+    }
+
+    let Some(player) = player else {
+        return Ok(ReplyMessage::Text("『開始』と送信して参加登録してください。".to_string()));
+    };
+
+    if player.finished_at.is_some() {
+        return Ok(ReplyMessage::Text("クリア済みです。最初の部屋に戻ってください。".to_string()));
+    }
+
+    if text == "ヒント" {
+        if !event.require_answer_check {
+            return Ok(ReplyMessage::Text("このイベントではヒント機能は利用できません。".to_string()));
+        }
+        let Some(room) = current_room(pool, &player).await? else {
+            return Ok(ReplyMessage::Text("現在の部屋が設定されていません。『開始』と送信してください。".to_string()));
+        };
+        return Ok(ReplyMessage::Text(
+            room.hint_msg.unwrap_or_else(|| "ヒントは登録されていません。".to_string()),
+        ));
+    }
+
+    if !event.require_answer_check {
+        return Ok(ReplyMessage::Text("QRコードを読み込んでください。".to_string()));
+    }
+    if player.answer_verified {
+        return Ok(ReplyMessage::Text("正解済みです。QRコードを読み込んでください。".to_string()));
+    }
+
+    let Some(room) = current_room(pool, &player).await? else {
+        return Ok(ReplyMessage::Text("現在の部屋が設定されていません。『開始』と送信してください。".to_string()));
+    };
+    if is_correct_answer(room.answer.as_deref(), text) {
+        player_repository::set_answer_verified(pool, player.id, true).await?;
+        Ok(ReplyMessage::Text("正解です！QRコードを読み込んでください。".to_string()))
+    } else {
+        Ok(ReplyMessage::Text("不正解です。もう一度お試しください。".to_string()))
+    }
+}
+
+fn help_text() -> String {
+    "『開始』で参加登録します。案内された部屋へ移動し、必要に応じて答えを送信してからQRコードを読み込んでください。『ヒント』でヒント、『リセット』で参加データを削除できます。".to_string()
+}
+
+fn name_prompt(is_team_mode: bool) -> String {
+    if is_team_mode {
+        "チーム名を入力してください。".to_string()
+    } else {
+        "個人名を入力してください。".to_string()
+    }
+}
+
+fn is_pending(pending: &PendingRegistrations, line_user_id: &str) -> bool {
+    pending.lock().unwrap().contains(line_user_id)
+}
+
+fn add_pending(pending: &PendingRegistrations, line_user_id: &str) {
+    pending.lock().unwrap().insert(line_user_id.to_string());
+}
+
+fn remove_pending(pending: &PendingRegistrations, line_user_id: &str) {
+    pending.lock().unwrap().remove(line_user_id);
+}
+
+fn was_pending_removed(pending: &PendingRegistrations, line_user_id: &str) -> bool {
+    pending.lock().unwrap().remove(line_user_id)
+}
+
+async fn quest_reply_for_player(
+    pool: &MySqlPool,
+    public_base_url: &str,
+    player: &player_repository::Player,
+) -> Result<ReplyMessage, GameServiceError> {
+    let Some(room) = current_room(pool, player).await? else {
+        return Ok(ReplyMessage::Text("現在の部屋が設定されていません。『開始』と送信してください。".to_string()));
+    };
+    quest_reply_for_room(pool, public_base_url, &room).await
+}
+
+async fn current_room(
+    pool: &MySqlPool,
+    player: &player_repository::Player,
+) -> Result<Option<room_repository::Room>, sqlx::Error> {
+    let Some(room_id) = player.current_room_id else {
+        return Ok(None);
+    };
+    room_repository::find_by_id(pool, room_id).await
+}
+
+async fn quest_reply_for_room(
+    pool: &MySqlPool,
+    public_base_url: &str,
+    room: &room_repository::Room,
+) -> Result<ReplyMessage, GameServiceError> {
+    let image_url = if let Some(image_id) = room.image_id {
+        room_image_repository::find_uuid_by_id(pool, image_id)
+            .await?
+            .map(|uuid| format!("{}/public/image/{uuid}", public_base_url.trim_end_matches('/')))
+    } else {
+        None
+    };
+
+    Ok(ReplyMessage::Quest {
+        room_name: room.room_name.clone(),
+        quest_text: room.quest_text.clone(),
+        image_url,
+    })
+}
+
+fn is_correct_answer(answer: Option<&str>, text: &str) -> bool {
+    let normalized = text.trim().to_lowercase();
+    answer
+        .unwrap_or_default()
+        .split(',')
+        .any(|candidate| candidate.trim().to_lowercase() == normalized)
+}
 
 #[cfg(test)]
 mod tests {
