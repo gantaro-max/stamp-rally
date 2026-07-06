@@ -21,6 +21,23 @@ pub enum ReplyMessage {
     },
 }
 
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckinRejection {
+    RoomNotFound,
+    NotRegistered,
+    AlreadyFinished,
+    WrongRoom,
+    AnswerNotVerified,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckinOutcome {
+    NextQuest(ReplyMessage),
+    Cleared,
+    Rejected(CheckinRejection),
+}
+
 #[derive(Debug)]
 pub enum GameServiceError {
     Database(sqlx::Error),
@@ -174,6 +191,53 @@ pub async fn handle_text_message(
         ))
     }
 }
+
+pub async fn checkin(
+    pool: &MySqlPool,
+    public_base_url: &str,
+    line_user_id: &str,
+    room_qr_uuid: &str,
+) -> Result<CheckinOutcome, GameServiceError> {
+    let Some(room) = room_repository::find_by_qr_uuid(pool, room_qr_uuid).await? else {
+        return Ok(CheckinOutcome::Rejected(CheckinRejection::RoomNotFound));
+    };
+    let Some(event) = event_repository::find_singleton(pool).await? else {
+        return Ok(CheckinOutcome::Rejected(CheckinRejection::NotRegistered));
+    };
+    let Some(player) =
+        player_repository::find_by_line_user_and_event(pool, line_user_id, event.id).await?
+    else {
+        return Ok(CheckinOutcome::Rejected(CheckinRejection::NotRegistered));
+    };
+
+    if player.finished_at.is_some() {
+        return Ok(CheckinOutcome::Rejected(CheckinRejection::AlreadyFinished));
+    }
+    if player.current_room_id != Some(room.id) {
+        return Ok(CheckinOutcome::Rejected(CheckinRejection::WrongRoom));
+    }
+    if event.require_answer_check && !player.answer_verified {
+        return Ok(CheckinOutcome::Rejected(CheckinRejection::AnswerNotVerified));
+    }
+
+    player_repository::insert_visited_room(pool, player.id, room.id).await?;
+    let visited_count = player_repository::count_visited(pool, player.id).await?;
+    let room_count = room_repository::count(pool, event.id).await?;
+    if visited_count >= room_count {
+        player_repository::mark_finished(pool, player.id).await?;
+        return Ok(CheckinOutcome::Cleared);
+    }
+
+    let Some(next_room) = room_repository::find_random_unvisited(pool, event.id, player.id).await?
+    else {
+        player_repository::mark_finished(pool, player.id).await?;
+        return Ok(CheckinOutcome::Cleared);
+    };
+    player_repository::update_current_room(pool, player.id, next_room.id).await?;
+    let reply = quest_reply_for_room(pool, public_base_url, &next_room).await?;
+    Ok(CheckinOutcome::NextQuest(reply))
+}
+
 
 fn help_text() -> String {
     "『開始』で参加登録します。案内された部屋へ移動し、必要に応じて答えを送信してからQRコードを読み込んでください。『ヒント』でヒント、『リセット』で参加データを削除できます。".to_string()
