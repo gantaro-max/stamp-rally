@@ -61,6 +61,22 @@ pub async fn find_singleton(pool: &MySqlPool) -> Result<Option<Event>, sqlx::Err
     }))
 }
 
+pub async fn update_settings(
+    pool: &MySqlPool,
+    id: i32,
+    is_team_mode: bool,
+    require_answer_check: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE events SET is_team_mode = ?, require_answer_check = ? WHERE id = ?")
+        .bind(is_team_mode)
+        .bind(require_answer_check)
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::count;
@@ -122,5 +138,4 @@ mod tests {
         assert!(!updated.is_team_mode);
         assert!(!updated.require_answer_check);
     }
-
 }

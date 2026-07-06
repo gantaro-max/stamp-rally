@@ -173,6 +173,10 @@ fn app_router_with_state(state: AppState) -> Router {
 
     let admin_router = Router::new()
         .route("/dashboard", get(handlers::admin::dashboard))
+        .route(
+            "/settings",
+            get(handlers::admin::settings_form).post(handlers::admin::update_settings),
+        )
         .route("/rooms", get(handlers::rooms::list))
         .route(
             "/rooms/add",
@@ -1322,7 +1326,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::FOUND);
-        assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/admin/settings");
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/admin/settings"
+        );
         assert!(event.is_team_mode);
         assert!(event.require_answer_check);
     }
@@ -1440,5 +1447,4 @@ mod tests {
             assert!(!event.require_answer_check);
         }
     }
-
 }
