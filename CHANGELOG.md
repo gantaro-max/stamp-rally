@@ -5,13 +5,17 @@
 ## [Unreleased]
 
 ### Added
+- LIFFチェックイン・ゴール判定機能を追加（#6）
+  - `GET /liff/checkin`：LIFF SDKでQRコードをスキャンするページ（LINEチャットにはPush Messageで案内するため、ページ自体はチェックイン結果のステータス表示のみ）
+  - `POST /liff/checkin`：LINEのIDトークン検証エンドポイント（`https://api.line.me/oauth2/v2.1/verify`）でLINEユーザーIDを検証してから、クライアント申告を信用せずサーバ側でチェックインを判定（部屋の存在・参加登録済みか・クリア済みでないか・案内された部屋と一致するか・判定モードが「QR＋正解入力」の場合は正解済みか、の順に検証）
+  - `game_service::checkin`：検証通過後に `visited_rooms` へ記録し、登録済み全部屋を訪問済みならクリアタイム（`finished_at`）を記録、そうでなければ未訪問の部屋からランダムに次の部屋を割り当てる（部屋数の上限「15」をハードコードせず、実際の登録数を基準に判定）
+  - `line_client`：LINE Push API（`POST https://api.line.me/v2/bot/message/push`）への送信を追加。チェックイン成功後の次のクエスト案内・クリア報告は、LIFFのレスポンスではなく常にLINEチャットへのPush Messageとして送る
 - LINE Bot基盤・ゲーム進行ロジックを追加（#5）
   - LINE Webhook `POST /callback`：`x-line-signature` の署名検証（HMAC-SHA256・定数時間比較、生ボディに対して検証）に失敗した場合は401、以降のイベント処理は一切行わない
   - `game_service`：「開始」コマンド（個人戦は個人名・チーム戦はチーム名の入力を促す。登録待ち状態はDBに永続化せずアプリ内メモリで保持）、未訪問の部屋からのランダム割当、「ヒント」「遊び方」「ヘルプ」「リセット」、判定モード「QR＋正解入力」時の正誤判定（`answer`をカンマ区切りで複数許容、前後空白・大小文字を無視して比較）
   - `line_client`：LINE Messaging API（Reply）への送信、クエスト通知用Flex Messageの組み立て（`game_service`はLINE固有のJSON構造・`reqwest`に非依存）
   - `GET /public/image/{uuid}`：部屋画像の公開配信ハンドラーを追加（`room-management`ではスコープ外としていたもの。Flex Messageの画像参照に必要なため本機能で実装）
   - `AppState` を導入（`pool`・LINEチャネル情報・`PUBLIC_BASE_URL`・登録待ち状態を保持）。`FromRef` により既存の `State<MySqlPool>` ハンドラーは無変更で動作
-  - LIFFでのQRチェックイン（`/liff/checkin`）・`visited_rooms`記録・ゴール判定は本機能のスコープ外（後続機能で対応）
 - 部屋（チェックポイント）管理機能を追加
   - `/admin/rooms` 系の一覧・新規登録・編集・削除ハンドラー（最大15部屋、`require_admin` 保護）
   - 画像アップロード（マジックバイト検証・5MBサイズ上限・寸法上限・800px幅/JPEG品質80へのリサイズ）
@@ -38,5 +42,6 @@
 - 設計ドキュメントを `docs/` フォルダにまとめて再編し、相互参照リンクを整理
 
 ### Security
+- LIFF `/liff/checkin` で、クライアント（ブラウザJS）が申告するLINEユーザーIDを直接信用せず、LINEのIDトークン検証エンドポイントで検証した `sub` のみを正とするよう実装（なりすまし対策）
 - LINE Webhook `/callback` の署名検証（`x-line-signature`、HMAC-SHA256・定数時間比較）を追加し、なりすまし・改ざんされたリクエストを401で遮断
 - シークレット（LINEチャネル情報・DB接続情報・管理者パスワード等）はすべて環境変数（`.env`、gitignore対象）経由で注入する方針を明文化し、devcontainerの設定からハードコードを排除
