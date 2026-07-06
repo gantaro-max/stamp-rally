@@ -66,19 +66,23 @@
 
 ## LIFF連携 (`handlers::liff`)
 
-| メソッド | パス | 説明 | CSRF |
-|:--|:--|:--|:--|
-| POST | `/liff/checkin` | LIFFで読み取ったQRコードの内容（部屋のUUID）とLINEユーザーIDを受け取り、チェックイン処理を行う | 除外（LIFFからの直接呼び出し） |
+| メソッド | パス | 説明 | 認証 | CSRF |
+|:--|:--|:--|:--|:--|
+| GET | `/liff/checkin` | LIFFページ（QRスキャンボタン）を表示 | 不要 | 対象外（Cookieセッションを使わないため） |
+| POST | `/liff/checkin` | LIFFで読み取ったQRコードの内容（部屋のUUID）とLINE IDトークンを受け取り、チェックイン処理を行う | IDトークン検証 | 除外（LIFFからの直接呼び出し） |
 
-### `/liff/checkin` の処理内容
+### `POST /liff/checkin` リクエスト
 
-1. LIFF SDK（`liff.getIDToken()` 等）で取得したLINEユーザーIDを検証する
-2. 送信されたUUIDが有効な部屋のものか確認する
-3. そのプレイヤーの `current_room_id` と一致するか確認する（案内された部屋以外は無効）
-4. 判定モードが「QR＋正解入力」のイベントでは、`answer_verified` が `true` であることも確認する
-5. すべて条件を満たせば `visited_rooms` に記録し、以下のいずれかを返す
-   - 未訪問部屋が残っている場合: 次の部屋（ランダム選出）の情報
-   - 全15部屋を訪問済みの場合: クリア完了（`finished_at` 記録済み）の情報
+```json
+{ "id_token": "<liff.getIDToken()の値>", "qr_uuid": "<liff.scanCodeV2()で読み取った値>" }
+```
+
+### `POST /liff/checkin` の処理内容（詳細は [architecture.md](architecture.md) 15節）
+
+1. `id_token` をLINEの検証エンドポイントに問い合わせ、有効であればLINEユーザーIDを得る。無効なら401
+2. 送信されたUUIDが有効な部屋のものか確認する。該当部屋が無ければ404（`{"status":"rejected","reason":"room_not_found"}`）
+3. そのLINEユーザーIDに対応する参加者が存在するか、`current_room_id` と一致するか、（判定モードが「QR＋正解入力」の場合は）`answer_verified` が `true` か、まだクリアしていないかを確認する。いずれか不成立なら403（`reason` は `not_registered` / `wrong_room` / `answer_not_verified` / `already_finished` のいずれか）
+4. すべて条件を満たせば `visited_rooms` に記録し、200を返す（`{"status":"next"}` または、全部屋訪問済みなら `{"status":"cleared"}`）。次の部屋の案内・クリア報告は、このレスポンスではなくLINEチャットへのPush Messageとして別途送信する
 
 ---
 

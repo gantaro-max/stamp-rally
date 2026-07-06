@@ -193,11 +193,12 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 - 部屋登録時に `qr_uuid`（UUID v4）を発行してDBに保存する（QR画像自体はDBに保存しない）
 - 管理画面 `GET /admin/rooms/{id}/qr` にアクセスするたびに、`qrcode` crate で `qr_uuid` の文字列をその場でPNGにエンコードして返す（`Content-Type: image/png`、`require_admin` 経由で保護）。印刷はスタッフがブラウザの印刷機能を使う想定で、専用の印刷レイアウトは用意しない
 - QRコードの中身（LIFFがスキャンして取得する文字列）は `qr_uuid` そのもの。URLなどでラップしない
-- LIFFアプリの「QRを読む」ボタンから `liff.scanCodeV2()` を呼び出し、読み取ったUUIDを `/liff/checkin` にPOST
-- サーバ側の検証項目：
-  1. UUIDが有効な部屋のものか
-  2. そのプレイヤーの `current_room_id` と一致するか（案内された部屋以外は無効）
-  3. `require_answer_check` がtrueのイベントでは `answer_verified` がtrueか
+- LIFFアプリの「QRを読む」ボタンから `liff.scanCodeV2()` を呼び出し、読み取ったUUIDと `liff.getIDToken()` で取得したIDトークンを `/liff/checkin` にPOST
+- サーバ側の検証項目（詳細は15節）：
+  1. IDトークンをLINEの検証エンドポイントに問い合わせ、有効な署名・有効期限であることと、そこに含まれる `sub`（LINEユーザーID）を確認する（クライアントが送ってきた文字列をそのままLINEユーザーIDとして信用しない）
+  2. UUIDが有効な部屋のものか
+  3. そのプレイヤーの `current_room_id` と一致するか（案内された部屋以外は無効）
+  4. `require_answer_check` がtrueのイベントでは `answer_verified` がtrueか
 - QRコードの不正利用（写真の使い回し等）はシステムでは対策せず、スタッフの目視提示運用でカバーする
 
 ---
@@ -305,11 +306,12 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 
 ## 13. `line_client` と Flex Message
 
-- LINE Messaging APIの [Reply API](https://developers.line.biz/) (`POST https://api.line.me/v2/bot/message/reply`) のみを使用する（Push APIは今回のスコープ外）。`Authorization: Bearer {LINE_CHANNEL_ACCESS_TOKEN}` ヘッダーを付与する
+- LINE Messaging APIの [Reply API](https://developers.line.biz/) (`POST https://api.line.me/v2/bot/message/reply`) を、Webhook（`/callback`）への応答に使用する。`Authorization: Bearer {LINE_CHANNEL_ACCESS_TOKEN}` ヘッダーを付与する
+- LIFFチェックイン（`/liff/checkin`、15節）はLINE Webhookのイベントではなく、LIFFページからの直接のHTTPリクエストであり `replyToken` を持たない。そのため、チェックイン成功後の次の部屋案内・クリア報告は [Push API](https://developers.line.biz/) (`POST https://api.line.me/v2/bot/message/push`、ボディは `{"to": line_user_id, "messages": [...]}`) を使う。Slice A時点では「Push APIは今回のスコープ外」としていたが、Slice B（LIFFチェックイン）でのみ使用する
 - 返信メッセージは `game_service` が組み立てる中間表現（例: テキスト／クエスト通知の列挙型）を受け取り、`line_client` がLINEのJSONスキーマに変換して送信する。`game_service` はLINE固有のJSON構造や `reqwest` を一切知らない（DBに依存するロジックをネットワーク呼び出しから切り離し、`sqlx::test` で検証できるようにするため）
 - クエスト通知はFlex Message（bubble）を使う。`altText` は必須（プッシュ通知等での代替テキスト）。画像がある部屋は `hero` に `/public/image/{uuid}` の絶対URL（`PUBLIC_BASE_URL` を前置）を設定し、無い部屋は `hero` を省略する
 - JSON組み立て関数（例: `build_text_message` / `build_quest_flex_message`）は純粋関数として実装し、実際にLINEへ送信する関数（`reqwest`を使う）と分離する。前者のみ自動テストの対象とし、後者（実ネットワーク呼び出し）は `AGENTS.md` の `sqlx::test` DB接続と同様、この開発環境ではテスト対象外とする（ネットワーク到達性が無いため）
-- 送信（`reqwest`呼び出し）が失敗しても、Webhookハンドラーは200を返す（8節）。送信失敗はログに記録するのみで、参加者側の状態（`players`・`visited_rooms`）は既に確定しているため、Webhook自体を失敗扱いにしない
+- 送信（`reqwest`呼び出し）が失敗しても、Webhookハンドラーは200を返す（8節）。送信失敗はログに記録するのみで、参加者側の状態（`players`・`visited_rooms`）は既に確定しているため、Webhook自体を失敗扱いにしない。`/liff/checkin` のPush送信失敗も同様に、DB状態は既に確定しているためログ記録のみとし、レスポンス自体は成功として返す
 
 ---
 
@@ -320,3 +322,38 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 | `LINE_CHANNEL_SECRET` | Webhook署名検証用のチャネルシークレット | `DATABASE_URL`と同様、エラー出力してプロセス終了 |
 | `LINE_CHANNEL_ACCESS_TOKEN` | Messaging API呼び出し用のアクセストークン | 同上 |
 | `PUBLIC_BASE_URL` | 画像URL等を組み立てる際に前置する公開ベースURL（末尾スラッシュなし、例 `https://example.onrender.com`） | 同上 |
+| `LIFF_ID` | LIFFページで `liff.init({ liffId })` に渡すLIFF ID（15節） | 同上（Slice Bから必須化） |
+| `LINE_LOGIN_CHANNEL_ID` | IDトークン検証エンドポイントに渡す `client_id`（LIFFアプリが属するチャネルのID。15節） | 同上（Slice Bで追加） |
+
+---
+
+## 15. LIFFチェックイン（`/liff/checkin`）とゴール判定（Slice B）
+
+### IDトークン検証
+
+- LIFFページは `liff.getIDToken()` で取得したIDトークン（JWT）と、`liff.scanCodeV2()` で読み取った `qr_uuid` を `POST /liff/checkin` に送信する
+- サーバは受け取ったIDトークンをそのまま信用せず、LINEの検証エンドポイント `POST https://api.line.me/oauth2/v2.1/verify`（`application/x-www-form-urlencoded`、`id_token` と `client_id`（`LINE_LOGIN_CHANNEL_ID`）を送信）に問い合わせる。有効なら応答JSONの `sub` がLINEユーザーIDとなる。無効・期限切れ・`aud`不一致等でエラー応答の場合は401とし、以降の処理を行わない
+- レスポンスJSONのパース（`sub` の抽出）は `line_client` 内の純粋関数として切り出し、自動テストの対象とする。実際のネットワーク呼び出し自体は13節と同様にテスト対象外とする
+- テスト容易性のため、`AppState` に `verify_id_tokens: bool`（本番は常に`true`固定）を持たせ、テスト時のみ`false`にして「リクエストの `id_token` フィールドの値をそのままLINEユーザーIDとして扱う」経路に切り替えられるようにする（Slice Aの `send_line_replies` と同じ考え方のテスト用フック）
+
+### `game_service::checkin` の判定順序
+
+1. `qr_uuid` に対応する部屋が存在しない → 拒否（`room_not_found`）
+2. 呼び出し元の（IDトークンから得た）LINEユーザーIDに対応する `players` 行が無い → 拒否（`not_registered`）
+3. `players.finished_at` が設定済み → 拒否（`already_finished`）
+4. 部屋の `id` が `players.current_room_id` と一致しない → 拒否（`wrong_room`。案内されていない部屋のQRは常に無効）
+5. `require_answer_check` がtrueかつ `players.answer_verified` がfalse → 拒否（`answer_not_verified`）
+6. すべて満たせば `visited_rooms` に記録する
+7. 記録後の訪問数が、そのイベントに登録済みの部屋数（`room_repository::count`。運用上は15だが、登録数に依存させることで実際の登録数がそれ未満の場合にも正しく動作する）に達した場合、`players.finished_at` を記録し「クリア」を表す結果を返す
+8. 達していない場合、未訪問の部屋からランダムに1部屋選出し（11節と同じ関数）、`current_room_id` を更新して次のクエストを表す結果を返す
+
+### レスポンス設計
+
+- チェックインの成否に関わらず、`/liff/checkin` 自体のレスポンスはLIFFページ表示用の最小限のJSON（`{"status": "next"}` / `{"status": "cleared"}` / `{"status": "rejected", "reason": "..."}`）のみとする。次の部屋のクエスト文・画像やクリア報告といった実際の案内内容は、常にLINEチャット側にPush Messageとして送る（LIFFページ自体にFlex Message相当の表示ロジックを持たせない。案内内容を`game_service`/`line_client`に一本化するため）
+- HTTPステータス: 成功系は200。`room_not_found` は404。その他の拒否理由（`not_registered`/`wrong_room`/`answer_not_verified`/`already_finished`）は403
+
+### LIFFページ（`GET /liff/checkin`）
+
+- 認証不要（LIFFのIDトークンによる検証は`POST`側で行う）。LINEアプリ内ブラウザ（またはLIFFの外部ブラウザモード）で開かれる想定
+- LINEのLIFF SDK（`https://static.line-scdn.net/liff/edge/2/sdk.js`）を読み込み、`liff.init({ liffId: LIFF_ID })` の後、「QRを読む」ボタンから `liff.scanCodeV2()` を呼び出す
+- 画面上はチェックイン結果（成功/クリア/エラー理由）を簡潔に表示するのみで、クエストの詳細はLINEチャットを確認するよう促す
