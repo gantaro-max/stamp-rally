@@ -10,9 +10,46 @@ use axum::{
     routing::{get, post},
 };
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
-use std::{env, net::SocketAddr, process};
+use std::{env, net::SocketAddr, process, sync::Arc};
 use time::Duration;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
+
+
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: MySqlPool,
+    pub line_channel_secret: Arc<str>,
+    pub line_channel_access_token: Arc<str>,
+    pub public_base_url: Arc<str>,
+    pub pending_registrations: services::game_service::PendingRegistrations,
+    pub http_client: reqwest::Client,
+    pub send_line_replies: bool,
+}
+
+impl AppState {
+    fn new(
+        pool: MySqlPool,
+        line_channel_secret: impl Into<Arc<str>>,
+        line_channel_access_token: impl Into<Arc<str>>,
+        public_base_url: impl Into<Arc<str>>,
+    ) -> Self {
+        Self {
+            pool,
+            line_channel_secret: line_channel_secret.into(),
+            line_channel_access_token: line_channel_access_token.into(),
+            public_base_url: public_base_url.into(),
+            pending_registrations: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
+            http_client: reqwest::Client::new(),
+            send_line_replies: true,
+        }
+    }
+}
+
+impl axum::extract::FromRef<AppState> for MySqlPool {
+    fn from_ref(state: &AppState) -> Self {
+        state.pool.clone()
+    }
+}
 
 const ROOM_MULTIPART_BODY_LIMIT: usize = services::image_service::MAX_UPLOAD_BYTES + 64 * 1024;
 
@@ -26,6 +63,19 @@ async fn main() {
         process::exit(1);
     });
 
+    let line_channel_secret = env::var("LINE_CHANNEL_SECRET").unwrap_or_else(|err| {
+        eprintln!("LINE_CHANNEL_SECRET must be set: {err}");
+        process::exit(1);
+    });
+    let line_channel_access_token = env::var("LINE_CHANNEL_ACCESS_TOKEN").unwrap_or_else(|err| {
+        eprintln!("LINE_CHANNEL_ACCESS_TOKEN must be set: {err}");
+        process::exit(1);
+    });
+    let public_base_url = env::var("PUBLIC_BASE_URL").unwrap_or_else(|err| {
+        eprintln!("PUBLIC_BASE_URL must be set: {err}");
+        process::exit(1);
+    });
+
     let pool = MySqlPoolOptions::new()
         .connect(&database_url)
         .await
@@ -36,7 +86,12 @@ async fn main() {
 
     seed_admin_event_or_exit(&pool).await;
 
-    let app = app_router(pool);
+    let app = app_router_with_state(AppState::new(
+        pool,
+        line_channel_secret,
+        line_channel_access_token,
+        public_base_url,
+    ));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
     let listener = tokio::net::TcpListener::bind(addr)
@@ -82,6 +137,15 @@ async fn seed_admin_event_or_exit(pool: &MySqlPool) {
 }
 
 fn app_router(pool: MySqlPool) -> Router {
+    app_router_with_state(AppState::new(
+        pool,
+        "test-channel-secret",
+        "test-channel-access-token",
+        "https://example.test",
+    ))
+}
+
+fn app_router_with_state(state: AppState) -> Router {
     let session_layer = SessionManagerLayer::new(MemoryStore::default())
         .with_expiry(Expiry::OnInactivity(Duration::hours(12)));
 
@@ -110,19 +174,21 @@ fn app_router(pool: MySqlPool) -> Router {
 
     Router::new()
         .route("/health", get(handlers::health::health))
+        .route("/callback", post(handlers::line_webhook::callback))
+        .route("/public/image/{uuid}", get(handlers::image::serve))
         .route(
             "/auth/login",
             get(handlers::auth::login_form).post(handlers::auth::login),
         )
         .nest("/auth", logout_router)
         .nest("/admin", admin_router)
-        .with_state(pool)
+        .with_state(state)
         .layer(session_layer)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::app_router;
+    use super::{AppState, app_router, app_router_with_state};
     use axum::{
         Router,
         body::{Body, to_bytes},
@@ -130,10 +196,19 @@ mod tests {
         middleware as axum_middleware,
         routing::{get, post},
     };
+    use base64::{Engine as _, engine::general_purpose};
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
     use sqlx::mysql::MySqlPoolOptions;
     use time::Duration;
     use tower::ServiceExt;
     use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer};
+
+    fn line_signature(secret: &str, body: &[u8]) -> String {
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(body);
+        general_purpose::STANDARD.encode(mac.finalize().into_bytes())
+    }
 
     fn extract_cookie(response: &axum::response::Response) -> String {
         response
@@ -1106,6 +1181,86 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+
+    #[sqlx::test]
+    async fn callback_with_valid_text_message_updates_game_state(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let mut state = AppState::new(
+            pool,
+            "test-channel-secret",
+            "test-channel-access-token",
+            "https://example.test",
+        );
+        state.send_line_replies = false;
+        let pending = state.pending_registrations.clone();
+        let app = app_router_with_state(state);
+        let body = r#"{"events":[{"type":"message","replyToken":"reply-token","source":{"userId":"line-valid"},"message":{"type":"text","text":"開始"}}]}"#;
+        let body = body.as_bytes();
+        let signature = line_signature("test-channel-secret", body);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/callback")
+                    .header("x-line-signature", signature)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(&body[..]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(pending.lock().unwrap().contains("line-valid"));
+    }
+
+
+    #[sqlx::test]
+    async fn public_image_returns_stored_image(pool: sqlx::MySqlPool) {
+        let data = b"jpeg-bytes";
+        crate::repository::room_image_repository::insert(&pool, "public-image-uuid", data, "image/jpeg")
+            .await
+            .unwrap();
+        let app = app_router(pool);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/public/image/public-image-uuid")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers().get(header::CONTENT_TYPE).unwrap(), "image/jpeg");
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&body[..], data);
+    }
+
+    #[sqlx::test]
+    async fn public_image_returns_not_found_for_missing_uuid(pool: sqlx::MySqlPool) {
+        let response = app_router(pool)
+            .oneshot(
+                Request::builder()
+                    .uri("/public/image/missing-uuid")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
 }

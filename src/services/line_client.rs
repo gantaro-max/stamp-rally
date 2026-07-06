@@ -19,6 +19,17 @@ impl From<reqwest::Error> for LineClientError {
     }
 }
 
+impl std::fmt::Display for LineClientError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Request(err) => write!(f, "request error: {err}"),
+            Self::ApiStatus(status) => write!(f, "LINE API returned status {status}"),
+        }
+    }
+}
+
+impl std::error::Error for LineClientError {}
+
 pub fn verify_signature(channel_secret: &str, body: &[u8], signature_header: &str) -> bool {
     if signature_header.is_empty() {
         return false;
