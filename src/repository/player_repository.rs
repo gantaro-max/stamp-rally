@@ -109,6 +109,38 @@ pub async fn delete_by_line_user_and_event(
     Ok(())
 }
 
+pub async fn insert_visited_room(
+    pool: &MySqlPool,
+    player_id: i32,
+    room_id: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO visited_rooms (player_id, room_id, visited_at) VALUES (?, ?, NOW())")
+        .bind(player_id)
+        .bind(room_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+pub async fn count_visited(pool: &MySqlPool, player_id: i32) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query("SELECT COUNT(*) AS count FROM visited_rooms WHERE player_id = ?")
+        .bind(player_id)
+        .fetch_one(pool)
+        .await?;
+
+    row.try_get("count")
+}
+
+pub async fn mark_finished(pool: &MySqlPool, player_id: i32) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE players SET finished_at = NOW() WHERE id = ?")
+        .bind(player_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     async fn seed_event(pool: &sqlx::MySqlPool) -> i32 {
