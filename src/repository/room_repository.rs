@@ -488,5 +488,4 @@ mod tests {
 
         assert!(room.is_none());
     }
-
 }

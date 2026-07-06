@@ -329,5 +329,4 @@ mod tests {
 
         assert!(player.finished_at.is_some());
     }
-
 }

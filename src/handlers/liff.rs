@@ -180,10 +180,16 @@ mod tests {
         .unwrap()
     }
 
-    async fn seed_player(pool: &sqlx::MySqlPool, event_id: i32, line_user_id: &str, room_id: i32) -> i32 {
-        let player_id = crate::repository::player_repository::insert(pool, line_user_id, event_id, "Alice")
-            .await
-            .unwrap();
+    async fn seed_player(
+        pool: &sqlx::MySqlPool,
+        event_id: i32,
+        line_user_id: &str,
+        room_id: i32,
+    ) -> i32 {
+        let player_id =
+            crate::repository::player_repository::insert(pool, line_user_id, event_id, "Alice")
+                .await
+                .unwrap();
         crate::repository::player_repository::update_current_room(pool, player_id, room_id)
             .await
             .unwrap();
@@ -202,7 +208,10 @@ mod tests {
         state.verify_id_tokens = false;
         state.send_line_replies = false;
         Router::new()
-            .route("/liff/checkin", get(super::checkin_page).post(super::checkin))
+            .route(
+                "/liff/checkin",
+                get(super::checkin_page).post(super::checkin),
+            )
             .with_state(state)
     }
 

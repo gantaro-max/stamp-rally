@@ -8,7 +8,6 @@ use crate::services::game_service::ReplyMessage;
 
 type HmacSha256 = Hmac<Sha256>;
 
-
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct IdTokenClaims {
     pub sub: String,
@@ -17,7 +16,6 @@ pub struct IdTokenClaims {
 pub fn parse_id_token_claims(body: &str) -> Result<IdTokenClaims, serde_json::Error> {
     serde_json::from_str(body)
 }
-
 
 #[derive(Debug)]
 pub enum LineClientError {
@@ -217,8 +215,6 @@ mod tests {
 
     type HmacSha256 = Hmac<Sha256>;
 
-
-
     fn signature(secret: &str, body: &[u8]) -> String {
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(body);
@@ -328,5 +324,4 @@ mod tests {
             json!({"type": "text", "text": "クリアしました！最初の部屋に戻ってください。お疲れ様でした！"})
         );
     }
-
 }

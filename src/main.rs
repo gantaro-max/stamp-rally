@@ -197,7 +197,10 @@ fn app_router_with_state(state: AppState) -> Router {
     Router::new()
         .route("/health", get(handlers::health::health))
         .route("/callback", post(handlers::line_webhook::callback))
-        .route("/liff/checkin", get(handlers::liff::checkin_page).post(handlers::liff::checkin))
+        .route(
+            "/liff/checkin",
+            get(handlers::liff::checkin_page).post(handlers::liff::checkin),
+        )
         .route("/public/image/{uuid}", get(handlers::image::serve))
         .route(
             "/auth/login",

@@ -21,7 +21,6 @@ pub enum ReplyMessage {
     },
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CheckinRejection {
     RoomNotFound,
@@ -217,7 +216,9 @@ pub async fn checkin(
         return Ok(CheckinOutcome::Rejected(CheckinRejection::WrongRoom));
     }
     if event.require_answer_check && !player.answer_verified {
-        return Ok(CheckinOutcome::Rejected(CheckinRejection::AnswerNotVerified));
+        return Ok(CheckinOutcome::Rejected(
+            CheckinRejection::AnswerNotVerified,
+        ));
     }
 
     player_repository::insert_visited_room(pool, player.id, room.id).await?;
@@ -237,7 +238,6 @@ pub async fn checkin(
     let reply = quest_reply_for_room(pool, public_base_url, &next_room).await?;
     Ok(CheckinOutcome::NextQuest(reply))
 }
-
 
 fn help_text() -> String {
     "『開始』で参加登録します。案内された部屋へ移動し、必要に応じて答えを送信してからQRコードを読み込んでください。『ヒント』でヒント、『リセット』で参加データを削除できます。".to_string()
@@ -836,14 +836,10 @@ mod tests {
         line_user_id: &str,
         room_id: i32,
     ) -> i32 {
-        let player_id = crate::repository::player_repository::insert(
-            pool,
-            line_user_id,
-            event_id,
-            "Alice",
-        )
-        .await
-        .unwrap();
+        let player_id =
+            crate::repository::player_repository::insert(pool, line_user_id, event_id, "Alice")
+                .await
+                .unwrap();
         crate::repository::player_repository::update_current_room(pool, player_id, room_id)
             .await
             .unwrap();
@@ -855,7 +851,8 @@ mod tests {
         let event_id = seed_event(&pool).await;
         let current_room = seed_named_room(&pool, event_id, "Library", "qr-current").await;
         let next_room = seed_named_room(&pool, event_id, "Gym", "qr-next").await;
-        let player_id = seed_player_current_room(&pool, event_id, "line-checkin-next", current_room).await;
+        let player_id =
+            seed_player_current_room(&pool, event_id, "line-checkin-next", current_room).await;
         crate::repository::player_repository::set_answer_verified(&pool, player_id, true)
             .await
             .unwrap();
@@ -872,17 +869,26 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert_eq!(crate::repository::player_repository::count_visited(&pool, player_id).await.unwrap(), 1);
+        assert_eq!(
+            crate::repository::player_repository::count_visited(&pool, player_id)
+                .await
+                .unwrap(),
+            1
+        );
         assert_eq!(player.current_room_id, Some(next_room));
         assert!(!player.answer_verified);
-        assert!(matches!(outcome, super::CheckinOutcome::NextQuest(ReplyMessage::Quest { .. })));
+        assert!(matches!(
+            outcome,
+            super::CheckinOutcome::NextQuest(ReplyMessage::Quest { .. })
+        ));
     }
 
     #[sqlx::test]
     async fn checkin_last_room_marks_finished_and_returns_cleared(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
         let only_room = seed_named_room(&pool, event_id, "Library", "qr-last").await;
-        let player_id = seed_player_current_room(&pool, event_id, "line-checkin-clear", only_room).await;
+        let player_id =
+            seed_player_current_room(&pool, event_id, "line-checkin-clear", only_room).await;
 
         let outcome = super::checkin(&pool, PUBLIC_BASE_URL, "line-checkin-clear", "qr-last")
             .await
@@ -897,7 +903,12 @@ mod tests {
         .unwrap();
 
         assert!(matches!(outcome, super::CheckinOutcome::Cleared));
-        assert_eq!(crate::repository::player_repository::count_visited(&pool, player_id).await.unwrap(), 1);
+        assert_eq!(
+            crate::repository::player_repository::count_visited(&pool, player_id)
+                .await
+                .unwrap(),
+            1
+        );
         assert!(player.finished_at.is_some());
     }
 
@@ -905,14 +916,23 @@ mod tests {
     async fn checkin_rejects_missing_room_without_db_change(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
         let current_room = seed_named_room(&pool, event_id, "Library", "qr-existing").await;
-        let player_id = seed_player_current_room(&pool, event_id, "line-missing-room", current_room).await;
+        let player_id =
+            seed_player_current_room(&pool, event_id, "line-missing-room", current_room).await;
 
         let outcome = super::checkin(&pool, PUBLIC_BASE_URL, "line-missing-room", "missing-qr")
             .await
             .unwrap();
 
-        assert_eq!(outcome, super::CheckinOutcome::Rejected(super::CheckinRejection::RoomNotFound));
-        assert_eq!(crate::repository::player_repository::count_visited(&pool, player_id).await.unwrap(), 0);
+        assert_eq!(
+            outcome,
+            super::CheckinOutcome::Rejected(super::CheckinRejection::RoomNotFound)
+        );
+        assert_eq!(
+            crate::repository::player_repository::count_visited(&pool, player_id)
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     #[sqlx::test]
@@ -920,11 +940,19 @@ mod tests {
         let event_id = seed_event(&pool).await;
         seed_named_room(&pool, event_id, "Library", "qr-unregistered").await;
 
-        let outcome = super::checkin(&pool, PUBLIC_BASE_URL, "line-not-registered", "qr-unregistered")
-            .await
-            .unwrap();
+        let outcome = super::checkin(
+            &pool,
+            PUBLIC_BASE_URL,
+            "line-not-registered",
+            "qr-unregistered",
+        )
+        .await
+        .unwrap();
 
-        assert_eq!(outcome, super::CheckinOutcome::Rejected(super::CheckinRejection::NotRegistered));
+        assert_eq!(
+            outcome,
+            super::CheckinOutcome::Rejected(super::CheckinRejection::NotRegistered)
+        );
     }
 
     #[sqlx::test]
@@ -932,14 +960,23 @@ mod tests {
         let event_id = seed_event(&pool).await;
         let current_room = seed_named_room(&pool, event_id, "Library", "qr-current-wrong").await;
         seed_named_room(&pool, event_id, "Gym", "qr-wrong").await;
-        let player_id = seed_player_current_room(&pool, event_id, "line-wrong-room", current_room).await;
+        let player_id =
+            seed_player_current_room(&pool, event_id, "line-wrong-room", current_room).await;
 
         let outcome = super::checkin(&pool, PUBLIC_BASE_URL, "line-wrong-room", "qr-wrong")
             .await
             .unwrap();
 
-        assert_eq!(outcome, super::CheckinOutcome::Rejected(super::CheckinRejection::WrongRoom));
-        assert_eq!(crate::repository::player_repository::count_visited(&pool, player_id).await.unwrap(), 0);
+        assert_eq!(
+            outcome,
+            super::CheckinOutcome::Rejected(super::CheckinRejection::WrongRoom)
+        );
+        assert_eq!(
+            crate::repository::player_repository::count_visited(&pool, player_id)
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     #[sqlx::test]
@@ -947,14 +984,28 @@ mod tests {
         let event_id = seed_event(&pool).await;
         set_require_answer_check(&pool, event_id, true).await;
         let room = seed_named_room(&pool, event_id, "Library", "qr-answer-required").await;
-        let player_id = seed_player_current_room(&pool, event_id, "line-answer-not-verified", room).await;
+        let player_id =
+            seed_player_current_room(&pool, event_id, "line-answer-not-verified", room).await;
 
-        let outcome = super::checkin(&pool, PUBLIC_BASE_URL, "line-answer-not-verified", "qr-answer-required")
-            .await
-            .unwrap();
+        let outcome = super::checkin(
+            &pool,
+            PUBLIC_BASE_URL,
+            "line-answer-not-verified",
+            "qr-answer-required",
+        )
+        .await
+        .unwrap();
 
-        assert_eq!(outcome, super::CheckinOutcome::Rejected(super::CheckinRejection::AnswerNotVerified));
-        assert_eq!(crate::repository::player_repository::count_visited(&pool, player_id).await.unwrap(), 0);
+        assert_eq!(
+            outcome,
+            super::CheckinOutcome::Rejected(super::CheckinRejection::AnswerNotVerified)
+        );
+        assert_eq!(
+            crate::repository::player_repository::count_visited(&pool, player_id)
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     #[sqlx::test]
@@ -962,24 +1013,36 @@ mod tests {
         let event_id = seed_event(&pool).await;
         set_require_answer_check(&pool, event_id, true).await;
         let room = seed_named_room(&pool, event_id, "Library", "qr-answer-verified").await;
-        let player_id = seed_player_current_room(&pool, event_id, "line-answer-verified", room).await;
+        let player_id =
+            seed_player_current_room(&pool, event_id, "line-answer-verified", room).await;
         crate::repository::player_repository::set_answer_verified(&pool, player_id, true)
             .await
             .unwrap();
 
-        let outcome = super::checkin(&pool, PUBLIC_BASE_URL, "line-answer-verified", "qr-answer-verified")
-            .await
-            .unwrap();
+        let outcome = super::checkin(
+            &pool,
+            PUBLIC_BASE_URL,
+            "line-answer-verified",
+            "qr-answer-verified",
+        )
+        .await
+        .unwrap();
 
         assert!(matches!(outcome, super::CheckinOutcome::Cleared));
-        assert_eq!(crate::repository::player_repository::count_visited(&pool, player_id).await.unwrap(), 1);
+        assert_eq!(
+            crate::repository::player_repository::count_visited(&pool, player_id)
+                .await
+                .unwrap(),
+            1
+        );
     }
 
     #[sqlx::test]
     async fn checkin_rejects_already_finished_player(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
         let room = seed_named_room(&pool, event_id, "Library", "qr-finished").await;
-        let player_id = seed_player_current_room(&pool, event_id, "line-already-finished", room).await;
+        let player_id =
+            seed_player_current_room(&pool, event_id, "line-already-finished", room).await;
         crate::repository::player_repository::mark_finished(&pool, player_id)
             .await
             .unwrap();
@@ -989,11 +1052,18 @@ mod tests {
             .await
             .unwrap();
 
-        let outcome = super::checkin(&pool, PUBLIC_BASE_URL, "line-already-finished", "qr-finished")
-            .await
-            .unwrap();
+        let outcome = super::checkin(
+            &pool,
+            PUBLIC_BASE_URL,
+            "line-already-finished",
+            "qr-finished",
+        )
+        .await
+        .unwrap();
 
-        assert_eq!(outcome, super::CheckinOutcome::Rejected(super::CheckinRejection::AlreadyFinished));
+        assert_eq!(
+            outcome,
+            super::CheckinOutcome::Rejected(super::CheckinRejection::AlreadyFinished)
+        );
     }
-
 }
