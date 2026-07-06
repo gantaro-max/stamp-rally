@@ -1,0 +1,19 @@
+{% extends "admin/_base.html" %}
+
+{% block title %}イベント設定{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4">イベント設定</h1>
+<form method="post" action="/admin/settings">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="form-check mb-3">
+    <input class="form-check-input" type="checkbox" id="is_team_mode" name="is_team_mode" {% if is_team_mode %}checked{% endif %}>
+    <label class="form-check-label" for="is_team_mode">チーム戦にする</label>
+  </div>
+  <div class="form-check mb-4">
+    <input class="form-check-input" type="checkbox" id="require_answer_check" name="require_answer_check" {% if require_answer_check %}checked{% endif %}>
+    <label class="form-check-label" for="require_answer_check">QR＋正解入力を必須にする</label>
+  </div>
+  <button class="btn btn-primary" type="submit">保存</button>
+</form>
+{% endblock %}

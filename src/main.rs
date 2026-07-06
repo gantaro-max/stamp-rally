@@ -173,6 +173,10 @@ fn app_router_with_state(state: AppState) -> Router {
 
     let admin_router = Router::new()
         .route("/dashboard", get(handlers::admin::dashboard))
+        .route(
+            "/settings",
+            get(handlers::admin::settings_form).post(handlers::admin::update_settings),
+        )
         .route("/rooms", get(handlers::rooms::list))
         .route(
             "/rooms/add",
@@ -1198,5 +1202,249 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn admin_settings_redirects_when_not_logged_in() {
+        let response = app_router(test_pool())
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/settings")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/auth/login"
+        );
+    }
+
+    #[sqlx::test]
+    async fn authenticated_session_can_view_settings_form(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        crate::repository::event_repository::update_settings(&pool, event_id, true, false)
+            .await
+            .unwrap();
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/settings")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains(r#"name="is_team_mode" checked"#));
+        assert!(body.contains(r#"name="require_answer_check""#));
+        assert!(!body.contains(r#"name="require_answer_check" checked"#));
+    }
+
+    #[sqlx::test]
+    async fn post_settings_with_checked_boxes_updates_flags(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/admin/settings")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::from(format!(
+                        "csrf_token={csrf_token}&is_team_mode=on&require_answer_check=on"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let event = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/admin/settings"
+        );
+        assert!(event.is_team_mode);
+        assert!(event.require_answer_check);
+    }
+
+    #[sqlx::test]
+    async fn post_settings_without_checkbox_fields_sets_flags_false(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        crate::repository::event_repository::update_settings(&pool, event_id, true, true)
+            .await
+            .unwrap();
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/admin/settings")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::from(format!("csrf_token={csrf_token}")))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let event = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert!(!event.is_team_mode);
+        assert!(!event.require_answer_check);
+    }
+
+    #[sqlx::test]
+    async fn post_settings_rejects_invalid_csrf_without_changing_db(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        for body in [
+            "is_team_mode=on&require_answer_check=on".to_string(),
+            "csrf_token=wrong&is_team_mode=on&require_answer_check=on".to_string(),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/admin/settings")
+                        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                        .header(header::COOKIE, session_cookie.clone())
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let event = crate::repository::event_repository::find_singleton(&pool)
+                .await
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            assert!(!event.is_team_mode);
+            assert!(!event.require_answer_check);
+        }
     }
 }
