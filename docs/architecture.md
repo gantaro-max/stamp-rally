@@ -206,6 +206,7 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 - アップロードサイズ上限: 5MB（リサイズ前の生データ）。超過時はアップロードを拒否する
 - 拡張子は見ず、`image` crateの `image::guess_format` でマジックバイトから実フォーマットを判定する
 - 許可フォーマット: JPEG, PNG のみ（それ以外はデコードを試みず拒否する）
+- 画像の寸法上限（4096px・1600万画素）を設け、超過する画像はデコード前に拒否する（巨大画像のデコードによるメモリ枯渇・decompression bomb対策）
 - 判定・デコードに成功した画像のみリサイズして保存する
 
 ---
@@ -217,7 +218,7 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
   - `true` の場合のみ `answer`（正解）を必須項目として扱う。`hint_msg` は任意
   - `false` の場合、フォームに正解・ヒント欄を表示しない。仮に送信されても `answer` / `hint_msg` は保存せず常にNULLとする（クライアントの申告を信用しない）
 - 画像を伴う登録・更新は `multipart/form-data` で受け取る。画像が添付されていない場合は画像なしで登録できる（`docs/requirements.md`：画像は任意）
-- 部屋の画像を更新する場合、新しい `room_images` 行を作成して `rooms.image_id` を張り替え、更新前に参照されていた `room_images` 行は削除する（孤立データを残さない）
+- 部屋の画像を更新する場合、新しい画像を先に `room_images` へ挿入して `rooms.image_id` を張り替えてから、更新前に参照されていた `room_images` 行を削除する（この順序を守ることで、新しい画像の保存に失敗した場合でも古い画像が残り、`rooms.image_id` が無効な行を指す状態を防ぐ）
 - 部屋を削除する場合、`rooms` 行の削除に合わせて、参照していた `room_images` 行も削除する（`visited_rooms` は既存の `ON DELETE CASCADE` で自動的に削除される）
 - 部屋一覧・登録・編集・削除・QR表示はすべて `/admin/*` 配下（`require_admin` 済み）。フォームは既存の `csrf_service`（セッション格納トークンとのダブルサブミット）を再利用する
 - 管理画面のAskamaテンプレートは `templates/admin/_base.html` を共通レイアウト（Bootstrap 5のナビゲーション等）として `{% extends %}` で利用する。今後追加する設定画面・ランキング画面もこのレイアウトに乗せる（`templates/auth/login.html` はログイン前の独立画面のため対象外のまま）
