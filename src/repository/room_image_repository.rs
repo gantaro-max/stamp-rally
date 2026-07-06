@@ -1,4 +1,4 @@
-use sqlx::MySqlPool;
+use sqlx::{MySqlPool, Row};
 
 pub async fn insert(
     pool: &MySqlPool,
@@ -28,4 +28,57 @@ pub async fn delete(pool: &MySqlPool, id: i32) -> Result<(), sqlx::Error> {
         .await?;
 
     Ok(())
+}
+
+pub async fn find_uuid_by_id(pool: &MySqlPool, id: i32) -> Result<Option<String>, sqlx::Error> {
+    let Some(row) = sqlx::query("SELECT uuid FROM room_images WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(row.try_get("uuid")?))
+}
+
+pub async fn find_by_uuid(
+    pool: &MySqlPool,
+    uuid: &str,
+) -> Result<Option<(Vec<u8>, String)>, sqlx::Error> {
+    let Some(row) = sqlx::query("SELECT data, mime_type FROM room_images WHERE uuid = ?")
+        .bind(uuid)
+        .fetch_optional(pool)
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some((row.try_get("data")?, row.try_get("mime_type")?)))
+}
+
+#[cfg(test)]
+mod tests {
+    #[sqlx::test]
+    async fn finds_image_by_uuid(pool: sqlx::MySqlPool) {
+        let data = b"jpeg-bytes";
+        super::insert(&pool, "image-uuid", data, "image/jpeg")
+            .await
+            .unwrap();
+
+        let (found_data, mime_type) = super::find_by_uuid(&pool, "image-uuid")
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(found_data, data);
+        assert_eq!(mime_type, "image/jpeg");
+    }
+
+    #[sqlx::test]
+    async fn find_by_uuid_returns_none_for_missing_uuid(pool: sqlx::MySqlPool) {
+        let image = super::find_by_uuid(&pool, "missing-uuid").await.unwrap();
+
+        assert!(image.is_none());
+    }
 }

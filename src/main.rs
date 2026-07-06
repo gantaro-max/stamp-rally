@@ -10,9 +10,47 @@ use axum::{
     routing::{get, post},
 };
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
-use std::{env, net::SocketAddr, process};
+use std::{env, net::SocketAddr, process, sync::Arc};
 use time::Duration;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
+
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: MySqlPool,
+    pub line_channel_secret: Arc<str>,
+    pub line_channel_access_token: Arc<str>,
+    pub public_base_url: Arc<str>,
+    pub pending_registrations: services::game_service::PendingRegistrations,
+    pub http_client: reqwest::Client,
+    pub send_line_replies: bool,
+}
+
+impl AppState {
+    fn new(
+        pool: MySqlPool,
+        line_channel_secret: impl Into<Arc<str>>,
+        line_channel_access_token: impl Into<Arc<str>>,
+        public_base_url: impl Into<Arc<str>>,
+    ) -> Self {
+        Self {
+            pool,
+            line_channel_secret: line_channel_secret.into(),
+            line_channel_access_token: line_channel_access_token.into(),
+            public_base_url: public_base_url.into(),
+            pending_registrations: Arc::new(
+                std::sync::Mutex::new(std::collections::HashSet::new()),
+            ),
+            http_client: reqwest::Client::new(),
+            send_line_replies: true,
+        }
+    }
+}
+
+impl axum::extract::FromRef<AppState> for MySqlPool {
+    fn from_ref(state: &AppState) -> Self {
+        state.pool.clone()
+    }
+}
 
 const ROOM_MULTIPART_BODY_LIMIT: usize = services::image_service::MAX_UPLOAD_BYTES + 64 * 1024;
 
@@ -26,6 +64,19 @@ async fn main() {
         process::exit(1);
     });
 
+    let line_channel_secret = env::var("LINE_CHANNEL_SECRET").unwrap_or_else(|err| {
+        eprintln!("LINE_CHANNEL_SECRET must be set: {err}");
+        process::exit(1);
+    });
+    let line_channel_access_token = env::var("LINE_CHANNEL_ACCESS_TOKEN").unwrap_or_else(|err| {
+        eprintln!("LINE_CHANNEL_ACCESS_TOKEN must be set: {err}");
+        process::exit(1);
+    });
+    let public_base_url = env::var("PUBLIC_BASE_URL").unwrap_or_else(|err| {
+        eprintln!("PUBLIC_BASE_URL must be set: {err}");
+        process::exit(1);
+    });
+
     let pool = MySqlPoolOptions::new()
         .connect(&database_url)
         .await
@@ -36,7 +87,12 @@ async fn main() {
 
     seed_admin_event_or_exit(&pool).await;
 
-    let app = app_router(pool);
+    let app = app_router_with_state(AppState::new(
+        pool,
+        line_channel_secret,
+        line_channel_access_token,
+        public_base_url,
+    ));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
     let listener = tokio::net::TcpListener::bind(addr)
@@ -81,7 +137,17 @@ async fn seed_admin_event_or_exit(pool: &MySqlPool) {
         });
 }
 
+#[cfg(test)]
 fn app_router(pool: MySqlPool) -> Router {
+    app_router_with_state(AppState::new(
+        pool,
+        "test-channel-secret",
+        "test-channel-access-token",
+        "https://example.test",
+    ))
+}
+
+fn app_router_with_state(state: AppState) -> Router {
     let session_layer = SessionManagerLayer::new(MemoryStore::default())
         .with_expiry(Expiry::OnInactivity(Duration::hours(12)));
 
@@ -110,13 +176,15 @@ fn app_router(pool: MySqlPool) -> Router {
 
     Router::new()
         .route("/health", get(handlers::health::health))
+        .route("/callback", post(handlers::line_webhook::callback))
+        .route("/public/image/{uuid}", get(handlers::image::serve))
         .route(
             "/auth/login",
             get(handlers::auth::login_form).post(handlers::auth::login),
         )
         .nest("/auth", logout_router)
         .nest("/admin", admin_router)
-        .with_state(pool)
+        .with_state(state)
         .layer(session_layer)
 }
 
@@ -1073,5 +1141,38 @@ mod tests {
 
             assert_eq!(response.status(), StatusCode::FORBIDDEN);
         }
+    }
+
+    #[tokio::test]
+    async fn callback_without_signature_returns_unauthorized() {
+        let response = app_router(test_pool())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/callback")
+                    .body(Body::from(r#"{"events":[]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn callback_with_invalid_signature_returns_unauthorized() {
+        let response = app_router(test_pool())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/callback")
+                    .header("x-line-signature", "invalid")
+                    .body(Body::from(r#"{"events":[]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 }

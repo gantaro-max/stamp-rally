@@ -8,13 +8,16 @@ argon2 = "0.5.3"
 askama = "0.16.0"
 askama_web = { version = "0.16.0", features = ["axum-0.8"] }
 axum = { version = "0.8.9", features = ["multipart"] }
+base64 = "0.22"
 chrono = "0.4.45"
 dotenvy = "0.15.7"
+hmac = "0.12"
 image = "0.25.10"
 qrcode = "0.14.1"
 reqwest = { version = "0.13.4", features = ["json"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
+sha2 = "0.10"
 sqlx = { version = "0.8.6", features = ["mysql", "runtime-tokio", "macros", "chrono", "uuid"] }
 tokio = { version = "1.52.3", features = ["full"] }
 tower-sessions = "0.15.0"
