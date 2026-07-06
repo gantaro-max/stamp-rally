@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- ランキング画面を追加（#8）
+  - `GET /admin/ranking`：クリア済み参加者を所要時間（`finished_at - started_at`）の短い順に表示。未クリアの参加者は順位を付けず「圏外」セクションに`started_at`昇順で別掲
+  - `ranking_service::build_ranking`をDB非依存の純粋関数として実装し、ソート・所要時間の表示形式（1時間未満は`M:SS`、1時間以上は`H:MM:SS`）・同着時の連番順位付けを単体テストで検証
+  - 自動更新（WebSocket・ポーリング）は導入せず、ページ読み込みのたびにDBの最新状態を反映する形で「リアルタイム」要件を満たす
+  - 管理画面ナビゲーションに「ランキング」リンクを追加
 - イベント設定画面を追加（#7）
   - `GET /admin/settings`：現在の個人戦/チーム戦・判定モードを反映したフォームを表示
   - `POST /admin/settings`：`event_service`経由で `events.is_team_mode` / `events.require_answer_check` を更新（チェックボックス未送信時は `false` として扱う）
