@@ -1,10 +1,149 @@
+use askama::Template;
+use axum::{
+    Json,
+    extract::State,
+    http::StatusCode,
+    response::{Html, IntoResponse, Response},
+};
+use serde::Deserialize;
+use serde_json::json;
+
+use crate::{
+    AppState,
+    services::{game_service, line_client},
+};
+
+#[derive(Template)]
+#[template(path = "liff/checkin.html")]
+struct CheckinTemplate {
+    liff_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CheckinRequest {
+    id_token: String,
+    qr_uuid: String,
+}
+
+pub async fn checkin_page(State(state): State<AppState>) -> Response {
+    let template = CheckinTemplate {
+        liff_id: state.liff_id.to_string(),
+    };
+
+    match template.render() {
+        Ok(body) => Html(body).into_response(),
+        Err(err) => {
+            tracing::error!(%err, "failed to render LIFF checkin page");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
+pub async fn checkin(State(state): State<AppState>, Json(body): Json<CheckinRequest>) -> Response {
+    let line_user_id = if state.verify_id_tokens {
+        match line_client::verify_id_token(
+            &state.http_client,
+            &body.id_token,
+            &state.line_login_channel_id,
+        )
+        .await
+        {
+            Ok(claims) => claims.sub,
+            Err(err) => {
+                tracing::warn!(?err, "failed to verify LIFF id token");
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(json!({"status": "rejected", "reason": "invalid_id_token"})),
+                )
+                    .into_response();
+            }
+        }
+    } else {
+        body.id_token
+    };
+
+    let outcome = match game_service::checkin(
+        &state.pool,
+        &state.public_base_url,
+        &line_user_id,
+        &body.qr_uuid,
+    )
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            tracing::error!(?err, "failed to process LIFF checkin");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    match outcome {
+        game_service::CheckinOutcome::NextQuest(reply) => {
+            if state.send_line_replies {
+                let message = line_client::to_line_message(&reply);
+                if let Err(err) = line_client::push_message(
+                    &state.http_client,
+                    &state.line_channel_access_token,
+                    &line_user_id,
+                    message,
+                )
+                .await
+                {
+                    tracing::error!(?err, "failed to push next quest message");
+                }
+            }
+            (StatusCode::OK, Json(json!({"status": "next"}))).into_response()
+        }
+        game_service::CheckinOutcome::Cleared => {
+            if state.send_line_replies {
+                let message = line_client::build_text_message(
+                    "クリアしました！最初の部屋に戻ってください。お疲れ様でした！",
+                );
+                if let Err(err) = line_client::push_message(
+                    &state.http_client,
+                    &state.line_channel_access_token,
+                    &line_user_id,
+                    message,
+                )
+                .await
+                {
+                    tracing::error!(?err, "failed to push cleared message");
+                }
+            }
+            (StatusCode::OK, Json(json!({"status": "cleared"}))).into_response()
+        }
+        game_service::CheckinOutcome::Rejected(reason) => {
+            let (status, reason) = rejection_response(reason);
+            (
+                status,
+                Json(json!({"status": "rejected", "reason": reason})),
+            )
+                .into_response()
+        }
+    }
+}
+
+fn rejection_response(reason: game_service::CheckinRejection) -> (StatusCode, &'static str) {
+    match reason {
+        game_service::CheckinRejection::RoomNotFound => (StatusCode::NOT_FOUND, "room_not_found"),
+        game_service::CheckinRejection::NotRegistered => (StatusCode::FORBIDDEN, "not_registered"),
+        game_service::CheckinRejection::AlreadyFinished => {
+            (StatusCode::FORBIDDEN, "already_finished")
+        }
+        game_service::CheckinRejection::WrongRoom => (StatusCode::FORBIDDEN, "wrong_room"),
+        game_service::CheckinRejection::AnswerNotVerified => {
+            (StatusCode::FORBIDDEN, "answer_not_verified")
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use axum::{
         Router,
         body::{Body, to_bytes},
         http::{Request, StatusCode, header},
-        routing::{get, post},
+        routing::get,
     };
     use serde_json::{Value, json};
     use tower::ServiceExt;
