@@ -4,13 +4,17 @@ mod repository;
 mod services;
 
 use axum::{
-    Router, middleware as axum_middleware,
+    Router,
+    extract::DefaultBodyLimit,
+    middleware as axum_middleware,
     routing::{get, post},
 };
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
 use std::{env, net::SocketAddr, process};
 use time::Duration;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
+
+const ROOM_MULTIPART_BODY_LIMIT: usize = services::image_service::MAX_UPLOAD_BYTES + 64 * 1024;
 
 #[tokio::main]
 async fn main() {
@@ -83,6 +87,16 @@ fn app_router(pool: MySqlPool) -> Router {
 
     let admin_router = Router::new()
         .route("/dashboard", get(handlers::admin::dashboard))
+        .route("/rooms", get(handlers::rooms::list))
+        .route(
+            "/rooms/add",
+            get(handlers::rooms::add_form).post(handlers::rooms::add),
+        )
+        .route("/rooms/edit/{id}", get(handlers::rooms::edit_form))
+        .route("/rooms/update/{id}", post(handlers::rooms::update))
+        .route("/rooms/delete/{id}", post(handlers::rooms::delete))
+        .route("/rooms/{id}/qr", get(handlers::rooms::qr))
+        .layer(DefaultBodyLimit::max(ROOM_MULTIPART_BODY_LIMIT))
         .route_layer(axum_middleware::from_fn(
             middleware::require_admin::require_admin,
         ));
@@ -179,6 +193,21 @@ mod tests {
                 )),
             )
             .layer(session_layer)
+    }
+
+    async fn consume_multipart_upload(mut multipart: axum::extract::Multipart) -> StatusCode {
+        while let Some(field) = multipart.next_field().await.unwrap() {
+            let _ = field.bytes().await.unwrap();
+        }
+        StatusCode::OK
+    }
+
+    fn room_upload_limit_test_app() -> Router {
+        Router::new()
+            .route("/test/upload", post(consume_multipart_upload))
+            .layer(axum::extract::DefaultBodyLimit::max(
+                super::ROOM_MULTIPART_BODY_LIMIT,
+            ))
     }
 
     fn test_pool() -> sqlx::MySqlPool {
@@ -335,6 +364,54 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn admin_rooms_redirects_when_not_logged_in() {
+        let response = app_router(test_pool())
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/rooms")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/auth/login"
+        );
+    }
+
+    #[tokio::test]
+    async fn room_upload_routes_accept_multipart_larger_than_axum_default() {
+        let app = room_upload_limit_test_app();
+        let boundary = "large-room-upload";
+        let mut body = Vec::new();
+        body.extend_from_slice(
+            format!("--{boundary}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"room.png\"\r\nContent-Type: image/png\r\n\r\n").as_bytes(),
+        );
+        body.extend(vec![b'a'; 2 * 1024 * 1024 + 1]);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/test/upload")
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_ne!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
     #[sqlx::test]
     async fn authenticated_session_can_access_dashboard(pool: sqlx::MySqlPool) {
         crate::services::auth_service::seed_admin_event_if_empty(
@@ -377,6 +454,504 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         assert_eq!(&body[..], b"ok");
+    }
+
+    #[sqlx::test]
+    async fn authenticated_session_can_view_rooms(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        crate::repository::room_repository::insert(
+            &pool,
+            event_id,
+            "Library",
+            "Find a book",
+            None,
+            None,
+            None,
+            "qr-list-1",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool);
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/rooms")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("Library"));
+    }
+
+    #[sqlx::test]
+    async fn authenticated_session_can_view_room_add_form(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool);
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/rooms/add")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains(r#"action="/admin/rooms/add""#));
+        assert!(body.contains(r#"name="csrf_token""#));
+    }
+
+    #[sqlx::test]
+    async fn post_room_add_creates_room_and_redirects(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+        let boundary = "room-boundary";
+        let body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"csrf_token\"\r\n\r\n{csrf_token}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"room_name\"\r\n\r\nLibrary\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"quest_text\"\r\n\r\nFind a book\r\n--{boundary}--\r\n"
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/admin/rooms/add")
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/admin/rooms"
+        );
+        assert_eq!(
+            crate::repository::room_repository::count(&pool, event_id)
+                .await
+                .unwrap(),
+            1
+        );
+    }
+
+    #[sqlx::test]
+    async fn post_room_add_rejects_invalid_csrf(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        for csrf_part in [
+            "",
+            "--room-boundary\r\nContent-Disposition: form-data; name=\"csrf_token\"\r\n\r\nwrong\r\n",
+        ] {
+            let boundary = "room-boundary";
+            let body = format!(
+                "{csrf_part}--{boundary}\r\nContent-Disposition: form-data; name=\"room_name\"\r\n\r\nLibrary\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"quest_text\"\r\n\r\nFind a book\r\n--{boundary}--\r\n"
+            );
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/admin/rooms/add")
+                        .header(
+                            header::CONTENT_TYPE,
+                            format!("multipart/form-data; boundary={boundary}"),
+                        )
+                        .header(header::COOKIE, session_cookie.clone())
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        }
+        assert_eq!(
+            crate::repository::room_repository::count(&pool, event_id)
+                .await
+                .unwrap(),
+            0
+        );
+    }
+
+    #[sqlx::test]
+    async fn room_edit_returns_404_for_missing_room(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool);
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/rooms/edit/9999")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[sqlx::test]
+    async fn post_room_delete_removes_room_and_redirects(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let room_id = crate::repository::room_repository::insert(
+            &pool,
+            event_id,
+            "Delete Me",
+            "Quest",
+            None,
+            None,
+            None,
+            "qr-delete-handler",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/admin/rooms/delete/{room_id}"))
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::from(format!("csrf_token={csrf_token}")))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/admin/rooms"
+        );
+        assert!(
+            crate::repository::room_repository::find_by_id(&pool, room_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[sqlx::test]
+    async fn room_qr_returns_png(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let room_id = crate::repository::room_repository::insert(
+            &pool,
+            event_id,
+            "QR Room",
+            "Quest",
+            None,
+            None,
+            None,
+            "qr-handler-value",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool);
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/admin/rooms/{room_id}/qr"))
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "image/png"
+        );
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(image::guess_format(&body).unwrap(), image::ImageFormat::Png);
+    }
+
+    #[sqlx::test]
+    async fn post_room_update_changes_room_and_redirects(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let room_id = crate::repository::room_repository::insert(
+            &pool,
+            event_id,
+            "Old",
+            "Old Quest",
+            None,
+            None,
+            None,
+            "qr-update-handler",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+        let boundary = "room-update-boundary";
+        let body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"csrf_token\"\r\n\r\n{csrf_token}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"room_name\"\r\n\r\nNew\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"quest_text\"\r\n\r\nNew Quest\r\n--{boundary}--\r\n"
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/admin/rooms/update/{room_id}"))
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/admin/rooms"
+        );
+        let room = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(room.room_name, "New");
+        assert_eq!(room.quest_text, "New Quest");
     }
 
     #[tokio::test]
