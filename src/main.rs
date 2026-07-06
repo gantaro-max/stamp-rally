@@ -14,7 +14,6 @@ use std::{env, net::SocketAddr, process, sync::Arc};
 use time::Duration;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
 
-
 #[derive(Clone)]
 pub struct AppState {
     pub pool: MySqlPool,
@@ -38,7 +37,9 @@ impl AppState {
             line_channel_secret: line_channel_secret.into(),
             line_channel_access_token: line_channel_access_token.into(),
             public_base_url: public_base_url.into(),
-            pending_registrations: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
+            pending_registrations: Arc::new(
+                std::sync::Mutex::new(std::collections::HashSet::new()),
+            ),
             http_client: reqwest::Client::new(),
             send_line_replies: true,
         }
@@ -136,6 +137,7 @@ async fn seed_admin_event_or_exit(pool: &MySqlPool) {
         });
 }
 
+#[cfg(test)]
 fn app_router(pool: MySqlPool) -> Router {
     app_router_with_state(AppState::new(
         pool,
@@ -1183,7 +1185,6 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
-
     #[sqlx::test]
     async fn callback_with_valid_text_message_updates_game_state(pool: sqlx::MySqlPool) {
         crate::services::auth_service::seed_admin_event_if_empty(
@@ -1223,13 +1224,17 @@ mod tests {
         assert!(pending.lock().unwrap().contains("line-valid"));
     }
 
-
     #[sqlx::test]
     async fn public_image_returns_stored_image(pool: sqlx::MySqlPool) {
         let data = b"jpeg-bytes";
-        crate::repository::room_image_repository::insert(&pool, "public-image-uuid", data, "image/jpeg")
-            .await
-            .unwrap();
+        crate::repository::room_image_repository::insert(
+            &pool,
+            "public-image-uuid",
+            data,
+            "image/jpeg",
+        )
+        .await
+        .unwrap();
         let app = app_router(pool);
 
         let response = app
@@ -1243,7 +1248,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.headers().get(header::CONTENT_TYPE).unwrap(), "image/jpeg");
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "image/jpeg"
+        );
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         assert_eq!(&body[..], data);
     }
@@ -1262,5 +1270,4 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
-
 }

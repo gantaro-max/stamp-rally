@@ -30,7 +30,6 @@ pub async fn delete(pool: &MySqlPool, id: i32) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-
 pub async fn find_uuid_by_id(pool: &MySqlPool, id: i32) -> Result<Option<String>, sqlx::Error> {
     let Some(row) = sqlx::query("SELECT uuid FROM room_images WHERE id = ?")
         .bind(id)
@@ -63,9 +62,14 @@ mod tests {
     #[sqlx::test]
     async fn finds_image_by_uuid(pool: sqlx::MySqlPool) {
         let data = b"jpeg-bytes";
-        super::insert(&pool, "image-uuid", data, "image/jpeg").await.unwrap();
+        super::insert(&pool, "image-uuid", data, "image/jpeg")
+            .await
+            .unwrap();
 
-        let (found_data, mime_type) = super::find_by_uuid(&pool, "image-uuid").await.unwrap().unwrap();
+        let (found_data, mime_type) = super::find_by_uuid(&pool, "image-uuid")
+            .await
+            .unwrap()
+            .unwrap();
 
         assert_eq!(found_data, data);
         assert_eq!(mime_type, "image/jpeg");

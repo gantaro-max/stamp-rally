@@ -63,7 +63,11 @@ pub fn build_text_message(text: &str) -> Value {
     json!({"type": "text", "text": text})
 }
 
-pub fn build_quest_flex_message(room_name: &str, quest_text: &str, image_url: Option<&str>) -> Value {
+pub fn build_quest_flex_message(
+    room_name: &str,
+    quest_text: &str,
+    image_url: Option<&str>,
+) -> Value {
     let mut contents = json!({
         "type": "bubble",
         "body": {
@@ -190,7 +194,10 @@ mod tests {
             message["contents"]["hero"]["url"],
             "https://example.test/public/image/image-uuid"
         );
-        assert_eq!(message["contents"]["body"]["contents"][0]["text"], "Library");
+        assert_eq!(
+            message["contents"]["body"]["contents"][0]["text"],
+            "Library"
+        );
         assert_eq!(
             message["contents"]["body"]["contents"][1]["text"],
             "Find the red book"
