@@ -1,0 +1,46 @@
+{% extends "admin/_base.html" %}
+
+{% block title %}ランキング{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4">ランキング</h1>
+
+<section class="mb-5">
+  <h2 class="h5 mb-3">クリア済み</h2>
+  {% if ranking.ranked.is_empty() %}
+    <p>クリア済みの参加者はいません</p>
+  {% else %}
+    <table class="table table-striped align-middle">
+      <thead>
+        <tr>
+          <th scope="col">順位</th>
+          <th scope="col">参加者名</th>
+          <th scope="col">所要時間</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in ranking.ranked %}
+          <tr>
+            <td>{{ entry.rank }}</td>
+            <td>{{ entry.player_name }}</td>
+            <td>{{ entry.elapsed_display }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+
+<section>
+  <h2 class="h5 mb-3">未クリア（圏外）</h2>
+  {% if ranking.unfinished.is_empty() %}
+    <p>全員クリア済みです</p>
+  {% else %}
+    <ul class="list-group">
+      {% for entry in ranking.unfinished %}
+        <li class="list-group-item">{{ entry.player_name }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endblock %}

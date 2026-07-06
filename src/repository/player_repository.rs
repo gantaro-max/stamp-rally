@@ -14,6 +14,19 @@ pub struct Player {
     pub finished_at: Option<NaiveDateTime>,
 }
 
+fn player_from_row(row: sqlx::mysql::MySqlRow) -> Result<Player, sqlx::Error> {
+    Ok(Player {
+        id: row.try_get("id")?,
+        line_user_id: row.try_get("line_user_id")?,
+        event_id: row.try_get("event_id")?,
+        player_name: row.try_get("player_name")?,
+        current_room_id: row.try_get("current_room_id")?,
+        answer_verified: row.try_get::<i8, _>("answer_verified")? != 0,
+        started_at: row.try_get("started_at")?,
+        finished_at: row.try_get("finished_at")?,
+    })
+}
+
 pub async fn find_by_line_user_and_event(
     pool: &MySqlPool,
     line_user_id: &str,
@@ -34,16 +47,25 @@ pub async fn find_by_line_user_and_event(
         return Ok(None);
     };
 
-    Ok(Some(Player {
-        id: row.try_get("id")?,
-        line_user_id: row.try_get("line_user_id")?,
-        event_id: row.try_get("event_id")?,
-        player_name: row.try_get("player_name")?,
-        current_room_id: row.try_get("current_room_id")?,
-        answer_verified: row.try_get::<i8, _>("answer_verified")? != 0,
-        started_at: row.try_get("started_at")?,
-        finished_at: row.try_get("finished_at")?,
-    }))
+    Ok(Some(player_from_row(row)?))
+}
+
+pub async fn find_all_by_event(
+    pool: &MySqlPool,
+    event_id: i32,
+) -> Result<Vec<Player>, sqlx::Error> {
+    let rows = sqlx::query(
+        r#"
+        SELECT id, line_user_id, event_id, player_name, current_room_id, answer_verified, started_at, finished_at
+        FROM players
+        WHERE event_id = ?
+        "#,
+    )
+    .bind(event_id)
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter().map(player_from_row).collect()
 }
 
 pub async fn insert(
@@ -328,5 +350,43 @@ mod tests {
             .unwrap();
 
         assert!(player.finished_at.is_some());
+    }
+
+    #[sqlx::test]
+    async fn find_all_by_event_returns_players_for_event(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        sqlx::query(
+            "INSERT INTO events (event_name, admin_pass_hash, is_team_mode, require_answer_check) VALUES (?, ?, FALSE, FALSE)",
+        )
+        .bind("Other Event")
+        .bind("hash")
+        .execute(&pool)
+        .await
+        .unwrap();
+        let other_event_id: i32 = sqlx::query_scalar("SELECT id FROM events WHERE event_name = ?")
+            .bind("Other Event")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        super::insert(&pool, "line-ranking-1", event_id, "Alice")
+            .await
+            .unwrap();
+        super::insert(&pool, "line-ranking-2", event_id, "Bob")
+            .await
+            .unwrap();
+        super::insert(&pool, "line-ranking-other", other_event_id, "Carol")
+            .await
+            .unwrap();
+
+        let players = super::find_all_by_event(&pool, event_id).await.unwrap();
+        let names: Vec<_> = players
+            .iter()
+            .map(|player| player.player_name.as_str())
+            .collect();
+
+        assert_eq!(players.len(), 2);
+        assert!(names.contains(&"Alice"));
+        assert!(names.contains(&"Bob"));
+        assert!(!names.contains(&"Carol"));
     }
 }

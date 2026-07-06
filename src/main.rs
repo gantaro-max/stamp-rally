@@ -177,6 +177,7 @@ fn app_router_with_state(state: AppState) -> Router {
             "/settings",
             get(handlers::admin::settings_form).post(handlers::admin::update_settings),
         )
+        .route("/ranking", get(handlers::admin::ranking))
         .route("/rooms", get(handlers::rooms::list))
         .route(
             "/rooms/add",
@@ -1202,6 +1203,171 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn admin_ranking_redirects_when_not_logged_in() {
+        let response = app_router(test_pool())
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/ranking")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/auth/login"
+        );
+    }
+
+    async fn seed_ranking_player(
+        pool: &sqlx::MySqlPool,
+        event_id: i32,
+        line_user_id: &str,
+        player_name: &str,
+        started_at: &str,
+        finished_at: Option<&str>,
+    ) {
+        let player_id =
+            crate::repository::player_repository::insert(pool, line_user_id, event_id, player_name)
+                .await
+                .unwrap();
+        sqlx::query("UPDATE players SET started_at = ?, finished_at = ? WHERE id = ?")
+            .bind(started_at)
+            .bind(finished_at)
+            .bind(player_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    #[sqlx::test]
+    async fn authenticated_session_can_view_ranked_finished_player(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        seed_ranking_player(
+            &pool,
+            event_id,
+            "line-ranking-finished",
+            "Alice",
+            "2026-01-01 10:00:00",
+            Some("2026-01-01 10:12:34"),
+        )
+        .await;
+        let app = app_router(pool);
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/ranking")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("Alice"));
+        assert!(body.contains("<td>1</td>"));
+        assert!(body.contains("12:34"));
+    }
+
+    #[sqlx::test]
+    async fn authenticated_session_can_view_unfinished_player_without_rank(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        seed_ranking_player(
+            &pool,
+            event_id,
+            "line-ranking-unfinished",
+            "Bob",
+            "2026-01-01 10:00:00",
+            None,
+        )
+        .await;
+        let app = app_router(pool);
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/ranking")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        let unfinished_heading = body.find("未クリア").unwrap();
+        let bob = body.find("Bob").unwrap();
+
+        assert!(body.contains("圏外"));
+        assert!(bob > unfinished_heading);
+        assert!(!body.contains("<td>1</td>"));
     }
 
     #[tokio::test]
