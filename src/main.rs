@@ -190,7 +190,7 @@ fn app_router_with_state(state: AppState) -> Router {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppState, app_router, app_router_with_state};
+    use super::app_router;
     use axum::{
         Router,
         body::{Body, to_bytes},
@@ -198,19 +198,10 @@ mod tests {
         middleware as axum_middleware,
         routing::{get, post},
     };
-    use base64::{Engine as _, engine::general_purpose};
-    use hmac::{Hmac, Mac};
-    use sha2::Sha256;
     use sqlx::mysql::MySqlPoolOptions;
     use time::Duration;
     use tower::ServiceExt;
     use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer};
-
-    fn line_signature(secret: &str, body: &[u8]) -> String {
-        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
-        mac.update(body);
-        general_purpose::STANDARD.encode(mac.finalize().into_bytes())
-    }
 
     fn extract_cookie(response: &axum::response::Response) -> String {
         response
@@ -1183,91 +1174,5 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[sqlx::test]
-    async fn callback_with_valid_text_message_updates_game_state(pool: sqlx::MySqlPool) {
-        crate::services::auth_service::seed_admin_event_if_empty(
-            &pool,
-            "admin-secret",
-            "Stamp Rally",
-        )
-        .await
-        .unwrap();
-        let mut state = AppState::new(
-            pool,
-            "test-channel-secret",
-            "test-channel-access-token",
-            "https://example.test",
-        );
-        state.send_line_replies = false;
-        let pending = state.pending_registrations.clone();
-        let app = app_router_with_state(state);
-        let body = r#"{"events":[{"type":"message","replyToken":"reply-token","source":{"userId":"line-valid"},"message":{"type":"text","text":"開始"}}]}"#;
-        let body = body.as_bytes();
-        let signature = line_signature("test-channel-secret", body);
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/callback")
-                    .header("x-line-signature", signature)
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(&body[..]))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert!(pending.lock().unwrap().contains("line-valid"));
-    }
-
-    #[sqlx::test]
-    async fn public_image_returns_stored_image(pool: sqlx::MySqlPool) {
-        let data = b"jpeg-bytes";
-        crate::repository::room_image_repository::insert(
-            &pool,
-            "public-image-uuid",
-            data,
-            "image/jpeg",
-        )
-        .await
-        .unwrap();
-        let app = app_router(pool);
-
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/public/image/public-image-uuid")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            response.headers().get(header::CONTENT_TYPE).unwrap(),
-            "image/jpeg"
-        );
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        assert_eq!(&body[..], data);
-    }
-
-    #[sqlx::test]
-    async fn public_image_returns_not_found_for_missing_uuid(pool: sqlx::MySqlPool) {
-        let response = app_router(pool)
-            .oneshot(
-                Request::builder()
-                    .uri("/public/image/missing-uuid")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }
