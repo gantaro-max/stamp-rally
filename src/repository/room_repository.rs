@@ -269,4 +269,66 @@ mod tests {
 
         assert!(super::find_by_id(&pool, room_id).await.unwrap().is_none());
     }
+
+    async fn seed_player(pool: &sqlx::MySqlPool, event_id: i32) -> i32 {
+        let result = sqlx::query(
+            "INSERT INTO players (line_user_id, event_id, player_name, started_at) VALUES (?, ?, ?, NOW())",
+        )
+        .bind("line-user-room-random")
+        .bind(event_id)
+        .bind("Player")
+        .execute(pool)
+        .await
+        .unwrap();
+        result.last_insert_id() as i32
+    }
+
+    #[sqlx::test]
+    async fn finds_random_unvisited_room(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let player_id = seed_player(&pool, event_id).await;
+        let visited_room_id = super::insert(&pool, event_id, "Visited", "Quest", None, None, None, "qr-random-1").await.unwrap();
+        let unvisited_a = super::insert(&pool, event_id, "Unvisited A", "Quest", None, None, None, "qr-random-2").await.unwrap();
+        let unvisited_b = super::insert(&pool, event_id, "Unvisited B", "Quest", None, None, None, "qr-random-3").await.unwrap();
+        sqlx::query("INSERT INTO visited_rooms (player_id, room_id, visited_at) VALUES (?, ?, NOW())")
+            .bind(player_id)
+            .bind(visited_room_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let room = super::find_random_unvisited(&pool, event_id, player_id).await.unwrap().unwrap();
+
+        assert!([unvisited_a, unvisited_b].contains(&room.id));
+    }
+
+    #[sqlx::test]
+    async fn find_random_unvisited_returns_none_when_all_rooms_visited(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let player_id = seed_player(&pool, event_id).await;
+        for index in 0..3 {
+            let room_id = super::insert(&pool, event_id, &format!("Room {index}"), "Quest", None, None, None, &format!("qr-all-visited-{index}")).await.unwrap();
+            sqlx::query("INSERT INTO visited_rooms (player_id, room_id, visited_at) VALUES (?, ?, NOW())")
+                .bind(player_id)
+                .bind(room_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+
+        let room = super::find_random_unvisited(&pool, event_id, player_id).await.unwrap();
+
+        assert!(room.is_none());
+    }
+
+    #[sqlx::test]
+    async fn find_random_unvisited_returns_none_when_event_has_no_rooms(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let player_id = seed_player(&pool, event_id).await;
+
+        let room = super::find_random_unvisited(&pool, event_id, player_id).await.unwrap();
+
+        assert!(room.is_none());
+    }
+
 }
