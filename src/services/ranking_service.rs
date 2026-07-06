@@ -1,3 +1,98 @@
+use chrono::TimeDelta;
+use sqlx::MySqlPool;
+
+use crate::repository::player_repository;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct RankedEntry {
+    pub rank: usize,
+    pub player_name: String,
+    pub elapsed_display: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct UnfinishedEntry {
+    pub player_name: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct RankingView {
+    pub ranked: Vec<RankedEntry>,
+    pub unfinished: Vec<UnfinishedEntry>,
+}
+
+#[derive(Debug)]
+pub enum RankingError {
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for RankingError {
+    fn from(err: sqlx::Error) -> Self {
+        Self::Database(err)
+    }
+}
+
+impl std::fmt::Display for RankingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Database(err) => write!(f, "database error: {err}"),
+        }
+    }
+}
+
+impl std::error::Error for RankingError {}
+
+pub fn build_ranking(players: Vec<player_repository::Player>) -> RankingView {
+    let mut finished = Vec::new();
+    let mut unfinished = Vec::new();
+
+    for player in players {
+        match player.finished_at {
+            Some(finished_at) => finished.push((finished_at - player.started_at, player)),
+            None => unfinished.push(player),
+        }
+    }
+
+    finished.sort_by_key(|(elapsed, player)| (*elapsed, player.started_at, player.id));
+    unfinished.sort_by_key(|player| (player.started_at, player.id));
+
+    RankingView {
+        ranked: finished
+            .into_iter()
+            .enumerate()
+            .map(|(index, (elapsed, player))| RankedEntry {
+                rank: index + 1,
+                player_name: player.player_name,
+                elapsed_display: format_elapsed(elapsed),
+            })
+            .collect(),
+        unfinished: unfinished
+            .into_iter()
+            .map(|player| UnfinishedEntry {
+                player_name: player.player_name,
+            })
+            .collect(),
+    }
+}
+
+pub async fn get_ranking(pool: &MySqlPool, event_id: i32) -> Result<RankingView, RankingError> {
+    let players = player_repository::find_all_by_event(pool, event_id).await?;
+    Ok(build_ranking(players))
+}
+
+fn format_elapsed(duration: TimeDelta) -> String {
+    let total_seconds = duration.num_seconds().max(0);
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let seconds = total_seconds % 60;
+
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::NaiveDateTime;

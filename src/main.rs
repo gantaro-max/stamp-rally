@@ -177,6 +177,7 @@ fn app_router_with_state(state: AppState) -> Router {
             "/settings",
             get(handlers::admin::settings_form).post(handlers::admin::update_settings),
         )
+        .route("/ranking", get(handlers::admin::ranking))
         .route("/rooms", get(handlers::rooms::list))
         .route(
             "/rooms/add",
