@@ -20,6 +20,9 @@ pub struct AppState {
     pub line_channel_secret: Arc<str>,
     pub line_channel_access_token: Arc<str>,
     pub public_base_url: Arc<str>,
+    pub liff_id: Arc<str>,
+    pub line_login_channel_id: Arc<str>,
+    pub verify_id_tokens: bool,
     pub pending_registrations: services::game_service::PendingRegistrations,
     pub http_client: reqwest::Client,
     pub send_line_replies: bool,
@@ -31,12 +34,17 @@ impl AppState {
         line_channel_secret: impl Into<Arc<str>>,
         line_channel_access_token: impl Into<Arc<str>>,
         public_base_url: impl Into<Arc<str>>,
+        liff_id: impl Into<Arc<str>>,
+        line_login_channel_id: impl Into<Arc<str>>,
     ) -> Self {
         Self {
             pool,
             line_channel_secret: line_channel_secret.into(),
             line_channel_access_token: line_channel_access_token.into(),
             public_base_url: public_base_url.into(),
+            liff_id: liff_id.into(),
+            line_login_channel_id: line_login_channel_id.into(),
+            verify_id_tokens: true,
             pending_registrations: Arc::new(
                 std::sync::Mutex::new(std::collections::HashSet::new()),
             ),
@@ -76,6 +84,14 @@ async fn main() {
         eprintln!("PUBLIC_BASE_URL must be set: {err}");
         process::exit(1);
     });
+    let liff_id = env::var("LIFF_ID").unwrap_or_else(|err| {
+        eprintln!("LIFF_ID must be set: {err}");
+        process::exit(1);
+    });
+    let line_login_channel_id = env::var("LINE_LOGIN_CHANNEL_ID").unwrap_or_else(|err| {
+        eprintln!("LINE_LOGIN_CHANNEL_ID must be set: {err}");
+        process::exit(1);
+    });
 
     let pool = MySqlPoolOptions::new()
         .connect(&database_url)
@@ -92,6 +108,8 @@ async fn main() {
         line_channel_secret,
         line_channel_access_token,
         public_base_url,
+        liff_id,
+        line_login_channel_id,
     ));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
@@ -144,6 +162,8 @@ fn app_router(pool: MySqlPool) -> Router {
         "test-channel-secret",
         "test-channel-access-token",
         "https://example.test",
+        "test-liff-id",
+        "test-login-channel-id",
     ))
 }
 
@@ -177,6 +197,10 @@ fn app_router_with_state(state: AppState) -> Router {
     Router::new()
         .route("/health", get(handlers::health::health))
         .route("/callback", post(handlers::line_webhook::callback))
+        .route(
+            "/liff/checkin",
+            get(handlers::liff::checkin_page).post(handlers::liff::checkin),
+        )
         .route("/public/image/{uuid}", get(handlers::image::serve))
         .route(
             "/auth/login",

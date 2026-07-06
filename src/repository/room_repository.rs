@@ -145,6 +145,33 @@ pub async fn find_by_id(pool: &MySqlPool, id: i32) -> Result<Option<Room>, sqlx:
     }))
 }
 
+pub async fn find_by_qr_uuid(pool: &MySqlPool, qr_uuid: &str) -> Result<Option<Room>, sqlx::Error> {
+    let Some(row) = sqlx::query(
+        r#"
+        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid
+        FROM rooms
+        WHERE qr_uuid = ?
+        "#,
+    )
+    .bind(qr_uuid)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(Room {
+        id: row.try_get("id")?,
+        event_id: row.try_get("event_id")?,
+        room_name: row.try_get("room_name")?,
+        quest_text: row.try_get("quest_text")?,
+        answer: row.try_get("answer")?,
+        hint_msg: row.try_get("hint_msg")?,
+        image_id: row.try_get("image_id")?,
+        qr_uuid: row.try_get("qr_uuid")?,
+    }))
+}
+
 pub async fn find_random_unvisited(
     pool: &MySqlPool,
     event_id: i32,
@@ -420,6 +447,42 @@ mod tests {
         let player_id = seed_player(&pool, event_id).await;
 
         let room = super::find_random_unvisited(&pool, event_id, player_id)
+            .await
+            .unwrap();
+
+        assert!(room.is_none());
+    }
+
+    #[sqlx::test]
+    async fn finds_room_by_qr_uuid(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let room_id = super::insert(
+            &pool,
+            event_id,
+            "QR Room",
+            "Scan the code",
+            None,
+            None,
+            None,
+            "qr-find-by-uuid",
+        )
+        .await
+        .unwrap();
+
+        let room = super::find_by_qr_uuid(&pool, "qr-find-by-uuid")
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(room.id, room_id);
+        assert_eq!(room.qr_uuid, "qr-find-by-uuid");
+    }
+
+    #[sqlx::test]
+    async fn find_by_qr_uuid_returns_none_for_missing_uuid(pool: sqlx::MySqlPool) {
+        seed_event(&pool).await;
+
+        let room = super::find_by_qr_uuid(&pool, "missing-qr-uuid")
             .await
             .unwrap();
 

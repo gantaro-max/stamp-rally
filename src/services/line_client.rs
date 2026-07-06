@@ -1,5 +1,6 @@
 use base64::{Engine as _, engine::general_purpose};
 use hmac::{Hmac, Mac};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::Sha256;
 
@@ -7,10 +8,20 @@ use crate::services::game_service::ReplyMessage;
 
 type HmacSha256 = Hmac<Sha256>;
 
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+pub struct IdTokenClaims {
+    pub sub: String,
+}
+
+pub fn parse_id_token_claims(body: &str) -> Result<IdTokenClaims, serde_json::Error> {
+    serde_json::from_str(body)
+}
+
 #[derive(Debug)]
 pub enum LineClientError {
     Request(reqwest::Error),
     ApiStatus(reqwest::StatusCode),
+    Json(serde_json::Error),
 }
 
 impl From<reqwest::Error> for LineClientError {
@@ -24,6 +35,7 @@ impl std::fmt::Display for LineClientError {
         match self {
             Self::Request(err) => write!(f, "request error: {err}"),
             Self::ApiStatus(status) => write!(f, "LINE API returned status {status}"),
+            Self::Json(err) => write!(f, "json error: {err}"),
         }
     }
 }
@@ -129,6 +141,71 @@ pub async fn send_reply(
     }
 }
 
+fn form_urlencode(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                encoded.push(byte as char);
+            }
+            b' ' => encoded.push('+'),
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
+pub async fn verify_id_token(
+    client: &reqwest::Client,
+    id_token: &str,
+    channel_id: &str,
+) -> Result<IdTokenClaims, LineClientError> {
+    // Integration tests do not exercise LINE's network API in this environment.
+    let form_body = format!(
+        "id_token={}&client_id={}",
+        form_urlencode(id_token),
+        form_urlencode(channel_id)
+    );
+    let response = client
+        .post("https://api.line.me/oauth2/v2.1/verify")
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        )
+        .body(form_body)
+        .send()
+        .await?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(LineClientError::ApiStatus(status));
+    }
+
+    let body = response.text().await?;
+    parse_id_token_claims(&body).map_err(LineClientError::Json)
+}
+
+pub async fn push_message(
+    client: &reqwest::Client,
+    access_token: &str,
+    to: &str,
+    message: Value,
+) -> Result<(), LineClientError> {
+    // Integration tests do not exercise LINE's network API in this environment.
+    let response = client
+        .post("https://api.line.me/v2/bot/message/push")
+        .bearer_auth(access_token)
+        .json(&json!({"to": to, "messages": [message]}))
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(LineClientError::ApiStatus(response.status()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use base64::{Engine as _, engine::general_purpose};
@@ -211,5 +288,40 @@ mod tests {
         assert_eq!(message["type"], "flex");
         assert!(message["contents"].get("hero").is_none());
         assert_eq!(message["altText"], "Library のクエスト");
+    }
+
+    #[test]
+    fn parse_id_token_claims_extracts_sub() {
+        let claims = super::parse_id_token_claims(
+            r#"{"sub":"line-user-1","exp":1234567890,"aud":"channel-id"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(claims.sub, "line-user-1");
+    }
+
+    #[test]
+    fn parse_id_token_claims_rejects_missing_sub_or_invalid_json() {
+        assert!(super::parse_id_token_claims(r#"{"exp":1234567890}"#).is_err());
+        assert!(super::parse_id_token_claims("not-json").is_err());
+    }
+
+    #[test]
+    fn to_line_message_builds_checkin_push_texts() {
+        let next = crate::services::game_service::ReplyMessage::Text(
+            "次の部屋をLINEで確認してください。".to_string(),
+        );
+        let cleared = crate::services::game_service::ReplyMessage::Text(
+            "クリアしました！最初の部屋に戻ってください。お疲れ様でした！".to_string(),
+        );
+
+        assert_eq!(
+            super::to_line_message(&next),
+            json!({"type": "text", "text": "次の部屋をLINEで確認してください。"})
+        );
+        assert_eq!(
+            super::to_line_message(&cleared),
+            json!({"type": "text", "text": "クリアしました！最初の部屋に戻ってください。お疲れ様でした！"})
+        );
     }
 }

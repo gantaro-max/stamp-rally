@@ -144,6 +144,8 @@ mod tests {
             "test-channel-secret",
             "test-channel-access-token",
             "https://example.test",
+            "test-liff-id",
+            "test-login-channel-id",
         );
         state.send_line_replies = false;
         let pending = state.pending_registrations.clone();

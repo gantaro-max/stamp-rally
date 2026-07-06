@@ -109,6 +109,38 @@ pub async fn delete_by_line_user_and_event(
     Ok(())
 }
 
+pub async fn insert_visited_room(
+    pool: &MySqlPool,
+    player_id: i32,
+    room_id: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO visited_rooms (player_id, room_id, visited_at) VALUES (?, ?, NOW())")
+        .bind(player_id)
+        .bind(room_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+pub async fn count_visited(pool: &MySqlPool, player_id: i32) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query("SELECT COUNT(*) AS count FROM visited_rooms WHERE player_id = ?")
+        .bind(player_id)
+        .fetch_one(pool)
+        .await?;
+
+    row.try_get("count")
+}
+
+pub async fn mark_finished(pool: &MySqlPool, player_id: i32) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE players SET finished_at = NOW() WHERE id = ?")
+        .bind(player_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     async fn seed_event(pool: &sqlx::MySqlPool) -> i32 {
@@ -249,5 +281,52 @@ mod tests {
                 .unwrap();
 
         assert_eq!(count, 0);
+    }
+
+    #[sqlx::test]
+    async fn insert_visited_room_increments_count(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let room_a = seed_room(&pool, event_id).await;
+        let room_b = crate::repository::room_repository::insert(
+            &pool,
+            event_id,
+            "Room 2",
+            "Quest",
+            None,
+            None,
+            None,
+            "qr-player-room-2",
+        )
+        .await
+        .unwrap();
+        let player_id = super::insert(&pool, "line-visited", event_id, "Alice")
+            .await
+            .unwrap();
+
+        assert_eq!(super::count_visited(&pool, player_id).await.unwrap(), 0);
+        super::insert_visited_room(&pool, player_id, room_a)
+            .await
+            .unwrap();
+        super::insert_visited_room(&pool, player_id, room_b)
+            .await
+            .unwrap();
+
+        assert_eq!(super::count_visited(&pool, player_id).await.unwrap(), 2);
+    }
+
+    #[sqlx::test]
+    async fn mark_finished_sets_finished_at(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let player_id = super::insert(&pool, "line-finished-repo", event_id, "Alice")
+            .await
+            .unwrap();
+
+        super::mark_finished(&pool, player_id).await.unwrap();
+        let player = super::find_by_line_user_and_event(&pool, "line-finished-repo", event_id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(player.finished_at.is_some());
     }
 }
