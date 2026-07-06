@@ -1074,4 +1074,38 @@ mod tests {
             assert_eq!(response.status(), StatusCode::FORBIDDEN);
         }
     }
+
+    #[tokio::test]
+    async fn callback_without_signature_returns_unauthorized() {
+        let response = app_router(test_pool())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/callback")
+                    .body(Body::from(r#"{"events":[]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn callback_with_invalid_signature_returns_unauthorized() {
+        let response = app_router(test_pool())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/callback")
+                    .header("x-line-signature", "invalid")
+                    .body(Body::from(r#"{"events":[]}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
 }
