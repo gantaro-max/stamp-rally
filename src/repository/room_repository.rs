@@ -425,4 +425,41 @@ mod tests {
 
         assert!(room.is_none());
     }
+
+    #[sqlx::test]
+    async fn finds_room_by_qr_uuid(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let room_id = super::insert(
+            &pool,
+            event_id,
+            "QR Room",
+            "Scan the code",
+            None,
+            None,
+            None,
+            "qr-find-by-uuid",
+        )
+        .await
+        .unwrap();
+
+        let room = super::find_by_qr_uuid(&pool, "qr-find-by-uuid")
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(room.id, room_id);
+        assert_eq!(room.qr_uuid, "qr-find-by-uuid");
+    }
+
+    #[sqlx::test]
+    async fn find_by_qr_uuid_returns_none_for_missing_uuid(pool: sqlx::MySqlPool) {
+        seed_event(&pool).await;
+
+        let room = super::find_by_qr_uuid(&pool, "missing-qr-uuid")
+            .await
+            .unwrap();
+
+        assert!(room.is_none());
+    }
+
 }

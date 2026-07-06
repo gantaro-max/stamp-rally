@@ -212,4 +212,40 @@ mod tests {
         assert!(message["contents"].get("hero").is_none());
         assert_eq!(message["altText"], "Library のクエスト");
     }
+
+    #[test]
+    fn parse_id_token_claims_extracts_sub() {
+        let claims = super::parse_id_token_claims(
+            r#"{"sub":"line-user-1","exp":1234567890,"aud":"channel-id"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(claims.sub, "line-user-1");
+    }
+
+    #[test]
+    fn parse_id_token_claims_rejects_missing_sub_or_invalid_json() {
+        assert!(super::parse_id_token_claims(r#"{"exp":1234567890}"#).is_err());
+        assert!(super::parse_id_token_claims("not-json").is_err());
+    }
+
+    #[test]
+    fn to_line_message_builds_checkin_push_texts() {
+        let next = crate::services::game_service::ReplyMessage::Text(
+            "次の部屋をLINEで確認してください。".to_string(),
+        );
+        let cleared = crate::services::game_service::ReplyMessage::Text(
+            "クリアしました！最初の部屋に戻ってください。お疲れ様でした！".to_string(),
+        );
+
+        assert_eq!(
+            super::to_line_message(&next),
+            json!({"type": "text", "text": "次の部屋をLINEで確認してください。"})
+        );
+        assert_eq!(
+            super::to_line_message(&cleared),
+            json!({"type": "text", "text": "クリアしました！最初の部屋に戻ってください。お疲れ様でした！"})
+        );
+    }
+
 }
