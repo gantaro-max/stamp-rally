@@ -56,6 +56,7 @@ Handler(Axum) → Service → Repository（sqlx） → DB
 |:--|:--|
 | `auth_service` | 管理者ログイン、Argon2によるパスワード認証 |
 | `room_service` | 部屋CRUD、画像アップロード、QRコード（UUID）発行・生成 |
+| `event_service` | イベント設定（個人戦/チーム戦、判定モード）の取得・更新 |
 | `game_service` | ゲーム進行ロジック（参加登録、部屋のランダム割当、正誤判定、QRチェックイン判定、ゴール判定） |
 | `ranking_service` | クリアタイムランキングの取得 |
 | `line_client` | LINE Messaging APIへのメッセージ送信（Flex Message組み立て含む） |
@@ -357,3 +358,14 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 - 認証不要（LIFFのIDトークンによる検証は`POST`側で行う）。LINEアプリ内ブラウザ（またはLIFFの外部ブラウザモード）で開かれる想定
 - LINEのLIFF SDK（`https://static.line-scdn.net/liff/edge/2/sdk.js`）を読み込み、`liff.init({ liffId: LIFF_ID })` の後、「QRを読む」ボタンから `liff.scanCodeV2()` を呼び出す
 - 画面上はチェックイン結果（成功/クリア/エラー理由）を簡潔に表示するのみで、クエストの詳細はLINEチャットを確認するよう促す
+
+---
+
+## 16. イベント設定画面（`/admin/settings`、Slice C）
+
+- 個人戦/チーム戦（`events.is_team_mode`）・判定モード（`events.require_answer_check`）の2項目のみを切り替える。`event_name`の編集は`docs/requirements.md`の要件に含まれないため、本画面のスコープ外とする
+- `events`はシングルトン運用のため、`event_service::current(pool)`で唯一の行を取得し、`event_service::update_settings(pool, input)`で更新する（`room-management-fixes`で提案した`room_service::current_event`と同種のラッパーだが、既存の`room_service`/`handlers::rooms.rs`が`event_repository::find_singleton`を直接呼ぶ既存実装への遡及的なリファクタリングは本スライスのスコープ外とする。新設する`event_service`内で完結させる）
+- HTMLの`<input type="checkbox">`はチェックが外れているとフィールド自体がフォームデータに含まれない。Axumの`Form`抽出でこれを扱うため、対応するリクエスト構造体のbool項目には`#[serde(default)]`を付与し、「送信されていない＝false」として扱う
+- 設定変更は既存データを一切書き換えない（例: `require_answer_check`を`false`に切り替えても、既存の`rooms.answer`/`hint_msg`はそのままDBに残る。`game_service`は常にイベントの現在の`require_answer_check`を見て使うかどうかを判断するため、未使用の値が残っていても実害はない。切替のたびに既存部屋のデータを消去・追従させるような処理は行わない）
+- 既存の参加者（`players`）・進行状況への影響も特に考慮しない（設定変更は次回の判定・部屋案内から反映される程度で十分とする。要件上、運用中の切替を想定していないため）
+- フォームは`admin/_base.html`を継承し、既存の`csrf_service`（ダブルサブミット）を再利用する。ナビゲーションに「設定」リンクを追加する
