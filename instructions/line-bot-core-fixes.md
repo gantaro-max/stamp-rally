@@ -62,3 +62,26 @@
 - [ ] `cargo test`が全体で通る（既存のケース1〜39を含む）
 - [ ] `cargo clippy`が警告なく通る
 - [ ] `git log`上で、各コミットのメッセージ（`test:`/`feat:`/`refactor:`）と実際の変更内容が一致していることを確認した
+
+---
+
+## 追加修正（1回目の差し戻し対応の再レビューで発見）
+
+1回目の修正（`0cc406e`〜`ab6a6c8`）でケース37〜39を`src/handlers/line_webhook.rs`・`src/handlers/image.rs`に正しくRed→Greenで実装し直したこと自体は確認できたが、**移行元だった`src/main.rs`側の旧テストが削除されずに残っており、内容が重複している**。
+
+- `src/main.rs`の`callback_with_valid_text_message_updates_game_state`（1188〜1225行目）・`public_image_returns_stored_image`（1227〜1257行目）・`public_image_returns_not_found_for_missing_uuid`（1259〜1272行目）は、それぞれ`src/handlers/line_webhook.rs`・`src/handlers/image.rs`に移設済みの同名テストと内容が重複している（元々`3face4a`/`af6ca8f`にあった実装をハンドラーファイルへ切り出した際の消し忘れ）
+- この重複コードの中に、`cargo clippy --all-targets -- -D warnings`で検出される警告が1件残っている:
+  - `src/main.rs:1217` `Body::from(&body[..])` → `redundant_slicing`（`Body::from(body)`で十分）。**`cargo clippy`（引数なし）はテストコードを対象外にするため検出されない。`--all-targets`を付けて実行して初めて検出できる**（今回はこの見落としが起きた）
+
+### 修正内容
+
+- [ ] ケースE: `src/main.rs`から上記3つの重複テスト関数（`callback_with_valid_text_message_updates_game_state`・`public_image_returns_stored_image`・`public_image_returns_not_found_for_missing_uuid`）を削除する（移設先の`handlers/line_webhook.rs`・`handlers/image.rs`のテストのみを正とする）。これにより`redundant_slicing`警告も併せて解消される
+- [ ] ケースF: `cargo clippy --all-targets -- -D warnings`（`--all-targets`を必ず付ける。テストコードの警告を見逃さないため）が警告なく通ることを確認する
+- 削除に伴い、`src/main.rs`のテストモジュール内で他に未使用になるヘルパー（例: `line_signature`関数が`main.rs`側でしか使われていない場合はそのまま残してよいが、完全に未使用になったヘルパーがあれば削除する）がないか確認する
+- この修正は単独のコミット（例: `test: remove duplicated webhook and image tests from main.rs`）とすること
+
+### 完了条件（追加分）
+
+- [ ] `src/main.rs`に重複テストが残っていない
+- [ ] `cargo clippy --all-targets -- -D warnings`が警告なく通る
+- [ ] `cargo test --no-run`が成功する
