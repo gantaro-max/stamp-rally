@@ -100,4 +100,27 @@ mod tests {
         assert!(verify_password("first-secret", &current.admin_pass_hash));
         assert!(!verify_password("second-secret", &current.admin_pass_hash));
     }
+
+    #[sqlx::test]
+    async fn updates_settings_both_directions(pool: sqlx::MySqlPool) {
+        seed_admin_event_if_empty(&pool, "admin-secret", "Stamp Rally")
+            .await
+            .unwrap();
+        let event = super::find_singleton(&pool).await.unwrap().unwrap();
+
+        super::update_settings(&pool, event.id, true, true)
+            .await
+            .unwrap();
+        let updated = super::find_singleton(&pool).await.unwrap().unwrap();
+        assert!(updated.is_team_mode);
+        assert!(updated.require_answer_check);
+
+        super::update_settings(&pool, event.id, false, false)
+            .await
+            .unwrap();
+        let updated = super::find_singleton(&pool).await.unwrap().unwrap();
+        assert!(!updated.is_team_mode);
+        assert!(!updated.require_answer_check);
+    }
+
 }
