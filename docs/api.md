@@ -32,7 +32,7 @@
 | POST | `/admin/rooms/update/{id}` | 部屋の更新 |
 | POST | `/admin/rooms/delete/{id}` | 部屋の削除 |
 | GET | `/admin/rooms/{id}/qr` | 部屋のQRコード画像を表示・印刷用に出力（スタッフが現地で保持するため） |
-| GET | `/admin/ranking` | クリアタイムランキング |
+| GET | `/admin/ranking` | クリアタイムランキング（所要時間の短い順。未クリア者は圏外セクションに別掲。詳細は [architecture.md](architecture.md) 17節） |
 
 ---
 
