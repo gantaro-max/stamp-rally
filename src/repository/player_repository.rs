@@ -329,4 +329,42 @@ mod tests {
 
         assert!(player.finished_at.is_some());
     }
+
+    #[sqlx::test]
+    async fn find_all_by_event_returns_players_for_event(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        sqlx::query(
+            "INSERT INTO events (event_name, admin_pass_hash, is_team_mode, require_answer_check) VALUES (?, ?, FALSE, FALSE)",
+        )
+        .bind("Other Event")
+        .bind("hash")
+        .execute(&pool)
+        .await
+        .unwrap();
+        let other_event_id: i32 = sqlx::query_scalar("SELECT id FROM events WHERE event_name = ?")
+            .bind("Other Event")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        super::insert(&pool, "line-ranking-1", event_id, "Alice")
+            .await
+            .unwrap();
+        super::insert(&pool, "line-ranking-2", event_id, "Bob")
+            .await
+            .unwrap();
+        super::insert(&pool, "line-ranking-other", other_event_id, "Carol")
+            .await
+            .unwrap();
+
+        let players = super::find_all_by_event(&pool, event_id).await.unwrap();
+        let names: Vec<_> = players
+            .iter()
+            .map(|player| player.player_name.as_str())
+            .collect();
+
+        assert_eq!(players.len(), 2);
+        assert!(names.contains(&"Alice"));
+        assert!(names.contains(&"Bob"));
+        assert!(!names.contains(&"Carol"));
+    }
 }
