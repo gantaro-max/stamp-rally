@@ -54,8 +54,11 @@
 ### Changed
 - devcontainerのシークレット管理を `.env` 経由の `env_file` 方式に変更し、MySQLヘルスチェック・ホストポート設定を堅牢化（#1）
 - 設計ドキュメントを `docs/` フォルダにまとめて再編し、相互参照リンクを整理
+- 部屋一覧画面（`/admin/rooms`）で、各部屋のQRコードをサムネイル画像として一覧に直接表示するよう変更（従来はテキストリンクで別ページに遷移するのみ）（#11）
 
 ### Security
 - LIFF `/liff/checkin` で、クライアント（ブラウザJS）が申告するLINEユーザーIDを直接信用せず、LINEのIDトークン検証エンドポイントで検証した `sub` のみを正とするよう実装（なりすまし対策）
 - LINE Webhook `/callback` の署名検証（`x-line-signature`、HMAC-SHA256・定数時間比較）を追加し、なりすまし・改ざんされたリクエストを401で遮断
 - シークレット（LINEチャネル情報・DB接続情報・管理者パスワード等）はすべて環境変数（`.env`、gitignore対象）経由で注入する方針を明文化し、devcontainerの設定からハードコードを排除
+- `csrf_service::verify_token` のトークン比較を定数時間比較に変更（`line_client`の署名検証と同様の方式に統一）（#11）
+- LIFF `/liff/checkin` が読み込むBootstrap CDNの`<link>`にSubresource Integrity（`integrity`/`crossorigin`）属性を追加し、CDN改ざん時のサプライチェーンリスクを軽減（#11）
