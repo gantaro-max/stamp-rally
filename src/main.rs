@@ -567,7 +567,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .id;
-        crate::repository::room_repository::insert(
+        let room_id = crate::repository::room_repository::insert(
             &pool,
             event_id,
             "Library",
@@ -613,6 +613,7 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body = String::from_utf8(body.to_vec()).unwrap();
         assert!(body.contains("Library"));
+        assert!(body.contains(&format!(r#"src="/admin/rooms/{room_id}/qr""#)));
     }
 
     #[sqlx::test]

@@ -11,7 +11,7 @@
   {% for room in rooms %}
     <tr>
       <td>{{ room.room_name }}</td>
-      <td><a href="/admin/rooms/{{ room.id }}/qr">QR表示</a></td>
+      <td><a href="/admin/rooms/{{ room.id }}/qr"><img src="/admin/rooms/{{ room.id }}/qr" alt="QRコード" width="60" height="60"></a></td>
       <td>
         <a class="btn btn-sm btn-outline-primary" href="/admin/rooms/edit/{{ room.id }}">編集</a>
         <form class="d-inline" method="post" action="/admin/rooms/delete/{{ room.id }}">
