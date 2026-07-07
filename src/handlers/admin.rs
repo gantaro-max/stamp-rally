@@ -25,11 +25,20 @@ struct SettingsTemplate {
 
 #[derive(Debug, Deserialize)]
 pub struct SettingsForm {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_checkbox")]
     is_team_mode: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_checkbox")]
     require_answer_check: bool,
+    #[serde(default)]
     csrf_token: String,
+}
+
+fn deserialize_checkbox<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    Ok(value == "on" || value == "true")
 }
 
 pub async fn settings_form(session: Session, State(pool): State<MySqlPool>) -> Response {
