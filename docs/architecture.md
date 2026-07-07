@@ -60,6 +60,9 @@ Handler(Axum) → Service → Repository（sqlx） → DB
 | `game_service` | ゲーム進行ロジック（参加登録、部屋のランダム割当、正誤判定、QRチェックイン判定、ゴール判定） |
 | `ranking_service` | クリアタイムランキングの取得 |
 | `line_client` | LINE Messaging APIへのメッセージ送信（Flex Message組み立て含む） |
+| `csrf_service` | セッション格納トークンによるCSRFダブルサブミット検証（発行・検証） |
+| `image_service` | アップロード画像のマジックバイト検証・サイズ/寸法上限チェック・JPEG再エンコード |
+| `qr_service` | 部屋UUIDからQRコードPNGを生成 |
 
 ### 認証方式
 
