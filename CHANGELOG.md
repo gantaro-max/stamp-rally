@@ -48,6 +48,9 @@
   - 初期DBマイグレーション（`events`, `rooms`, `players`, `visited_rooms`, `room_images`）を追加
   - `handlers` / `services` / `repository` の初期モジュール構成を追加
 
+### Fixed
+- `POST /admin/settings` で、チェックボックス（個人戦/チーム戦・判定モード）にチェックを入れて送信すると、HTMLが送る値`"on"`をAxumの`Form`抽出（bool型）が受け付けられず、常に422でハンドラーに到達できなかった不具合を修正（`"on"`/`"true"`を`true`として扱うカスタムデシリアライザを追加）。事実上、設定画面から各項目をONに切り替える操作が一切機能していなかった（#10）
+
 ### Changed
 - devcontainerのシークレット管理を `.env` 経由の `env_file` 方式に変更し、MySQLヘルスチェック・ホストポート設定を堅牢化（#1）
 - 設計ドキュメントを `docs/` フォルダにまとめて再編し、相互参照リンクを整理

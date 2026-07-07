@@ -365,7 +365,7 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 
 - 個人戦/チーム戦（`events.is_team_mode`）・判定モード（`events.require_answer_check`）の2項目のみを切り替える。`event_name`の編集は`docs/requirements.md`の要件に含まれないため、本画面のスコープ外とする
 - `events`はシングルトン運用のため、`event_service::current(pool)`で唯一の行を取得し、`event_service::update_settings(pool, input)`で更新する（`room_service::current_event`と同種のラッパー。なお`room_service`/`handlers::rooms.rs`側も`room-management-fixes-2`で`event_repository::find_singleton`の直接呼び出しを`room_service::current_event`経由に統一済み）
-- HTMLの`<input type="checkbox">`はチェックが外れているとフィールド自体がフォームデータに含まれない。Axumの`Form`抽出でこれを扱うため、対応するリクエスト構造体のbool項目には`#[serde(default)]`を付与し、「送信されていない＝false」として扱う
+- HTMLの`<input type="checkbox">`はチェックが外れているとフィールド自体がフォームデータに含まれない。Axumの`Form`抽出でこれを扱うため、対応するリクエスト構造体のbool項目には`#[serde(default)]`を付与し、「送信されていない＝false」として扱う。また、チェックが入っている場合HTMLは値`"on"`を送信するが、`serde_urlencoded`のbool型デシリアライザは`"true"`/`"false"`しか受け付けないため、`#[serde(default)]`だけでは不十分（送信時に422になる）。`"on"`/`"true"`を`true`として扱うカスタム`deserialize_with`関数を併用すること（`settings-checkbox-fix`で対応）
 - 設定変更は既存データを一切書き換えない（例: `require_answer_check`を`false`に切り替えても、既存の`rooms.answer`/`hint_msg`はそのままDBに残る。`game_service`は常にイベントの現在の`require_answer_check`を見て使うかどうかを判断するため、未使用の値が残っていても実害はない。切替のたびに既存部屋のデータを消去・追従させるような処理は行わない）
 - 既存の参加者（`players`）・進行状況への影響も特に考慮しない（設定変更は次回の判定・部屋案内から反映される程度で十分とする。要件上、運用中の切替を想定していないため）
 - フォームは`admin/_base.html`を継承し、既存の`csrf_service`（ダブルサブミット）を再利用する。ナビゲーションに「設定」リンクを追加する
