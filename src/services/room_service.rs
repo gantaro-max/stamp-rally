@@ -340,6 +340,16 @@ mod tests {
     }
 
     #[sqlx::test]
+    async fn current_event_returns_singleton_event(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+
+        let event = super::current_event(&pool).await.unwrap();
+
+        assert_eq!(event.id, event_id);
+        assert_eq!(event.event_name, "Stamp Rally");
+    }
+
+    #[sqlx::test]
     async fn update_replaces_existing_image(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
         let room_id = super::create(
