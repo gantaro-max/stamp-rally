@@ -24,11 +24,9 @@ pub async fn list(State(pool): State<MySqlPool>, session: Session) -> Response {
         Ok(token) => token,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    let Some(event) = (match crate::repository::event_repository::find_singleton(&pool).await {
+    let event = match room_service::current_event(&pool).await {
         Ok(event) => event,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }) else {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
     let rooms = match room_service::list(&pool, event.id).await {
         Ok(rooms) => rooms,
@@ -55,11 +53,9 @@ struct RoomAddTemplate {
 }
 
 pub async fn add_form(State(pool): State<MySqlPool>, session: Session) -> Response {
-    let Some(event) = (match crate::repository::event_repository::find_singleton(&pool).await {
+    let event = match room_service::current_event(&pool).await {
         Ok(event) => event,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }) else {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
     render_add_form(
         session,
@@ -137,11 +133,9 @@ pub async fn add(
     session: Session,
     multipart: Multipart,
 ) -> Response {
-    let Some(event) = (match crate::repository::event_repository::find_singleton(&pool).await {
+    let event = match room_service::current_event(&pool).await {
         Ok(event) => event,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }) else {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
     let form = match parse_room_multipart(multipart).await {
         Ok(form) => form,
@@ -181,7 +175,7 @@ pub async fn add(
             )
             .await
         }
-        Err(room_service::RoomError::Image(_)) => {
+        Err(room_service::RoomError::Image) => {
             render_add_form(
                 session,
                 event.require_answer_check,
@@ -258,11 +252,9 @@ pub async fn edit_form(
     session: Session,
     AxumPath(id): AxumPath<i32>,
 ) -> Response {
-    let Some(event) = (match crate::repository::event_repository::find_singleton(&pool).await {
+    let event = match room_service::current_event(&pool).await {
         Ok(event) => event,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }) else {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
     let Some(room) = (match room_service::get(&pool, id).await {
         Ok(room) => room,
@@ -332,11 +324,9 @@ pub async fn update(
     AxumPath(id): AxumPath<i32>,
     multipart: Multipart,
 ) -> Response {
-    let Some(event) = (match crate::repository::event_repository::find_singleton(&pool).await {
+    let event = match room_service::current_event(&pool).await {
         Ok(event) => event,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }) else {
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     };
     let form = match parse_room_multipart(multipart).await {
         Ok(form) => form,
@@ -374,7 +364,7 @@ pub async fn update(
             )
             .await
         }
-        Err(room_service::RoomError::Image(_)) => {
+        Err(room_service::RoomError::Image) => {
             render_edit_form(
                 session,
                 event.require_answer_check,

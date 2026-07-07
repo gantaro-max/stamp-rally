@@ -31,29 +31,21 @@ pub enum RoomError {
     MaxRoomsReached,
     AnswerRequired,
     NotFound,
-    Image(image_service::ImageError),
-    Database(sqlx::Error),
+    Image,
+    Database,
 }
 
 impl From<sqlx::Error> for RoomError {
-    fn from(err: sqlx::Error) -> Self {
-        Self::Database(err)
+    fn from(_: sqlx::Error) -> Self {
+        Self::Database
     }
 }
 
-impl std::fmt::Display for RoomError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MaxRoomsReached => f.write_str("room limit reached"),
-            Self::AnswerRequired => f.write_str("answer required"),
-            Self::NotFound => f.write_str("room not found"),
-            Self::Image(err) => write!(f, "image error: {err:?}"),
-            Self::Database(err) => write!(f, "database error: {err}"),
-        }
-    }
+pub async fn current_event(pool: &MySqlPool) -> Result<event_repository::Event, RoomError> {
+    event_repository::find_singleton(pool)
+        .await?
+        .ok_or(RoomError::NotFound)
 }
-
-impl std::error::Error for RoomError {}
 
 pub async fn create(
     pool: &MySqlPool,
@@ -81,7 +73,7 @@ pub async fn create(
     };
 
     let image_id = if let Some(bytes) = input.image_bytes {
-        let processed = image_service::process_upload(&bytes).map_err(RoomError::Image)?;
+        let processed = image_service::process_upload(&bytes).map_err(|_| RoomError::Image)?;
         Some(
             room_image_repository::insert(
                 pool,
@@ -106,7 +98,7 @@ pub async fn create(
         &Uuid::new_v4().to_string(),
     )
     .await
-    .map_err(RoomError::Database)
+    .map_err(|_| RoomError::Database)
 }
 
 pub async fn update(pool: &MySqlPool, id: i32, input: UpdateRoomInput) -> Result<(), RoomError> {
@@ -130,19 +122,18 @@ pub async fn update(pool: &MySqlPool, id: i32, input: UpdateRoomInput) -> Result
     };
 
     let image_id = if let Some(bytes) = input.image_bytes {
-        let processed = image_service::process_upload(&bytes).map_err(RoomError::Image)?;
+        let processed = image_service::process_upload(&bytes).map_err(|_| RoomError::Image)?;
+        let new_image_id = room_image_repository::insert(
+            pool,
+            &Uuid::new_v4().to_string(),
+            &processed,
+            "image/jpeg",
+        )
+        .await?;
         if let Some(old_image_id) = existing.image_id {
             room_image_repository::delete(pool, old_image_id).await?;
         }
-        Some(
-            room_image_repository::insert(
-                pool,
-                &Uuid::new_v4().to_string(),
-                &processed,
-                "image/jpeg",
-            )
-            .await?,
-        )
+        Some(new_image_id)
     } else {
         existing.image_id
     };
@@ -180,13 +171,13 @@ pub async fn list(
 ) -> Result<Vec<room_repository::Room>, RoomError> {
     room_repository::find_all(pool, event_id)
         .await
-        .map_err(RoomError::Database)
+        .map_err(|_| RoomError::Database)
 }
 
 pub async fn get(pool: &MySqlPool, id: i32) -> Result<Option<room_repository::Room>, RoomError> {
     room_repository::find_by_id(pool, id)
         .await
-        .map_err(RoomError::Database)
+        .map_err(|_| RoomError::Database)
 }
 
 #[cfg(test)]
@@ -337,6 +328,16 @@ mod tests {
             .unwrap();
 
         assert_eq!(count, 1);
+    }
+
+    #[sqlx::test]
+    async fn current_event_returns_singleton_event(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+
+        let event = super::current_event(&pool).await.unwrap();
+
+        assert_eq!(event.id, event_id);
+        assert_eq!(event.event_name, "Stamp Rally");
     }
 
     #[sqlx::test]
