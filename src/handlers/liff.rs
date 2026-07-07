@@ -322,5 +322,9 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body = String::from_utf8(body.to_vec()).unwrap();
         assert!(body.contains("test-liff-id"));
+        assert!(body.contains(
+            "integrity=\"sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH\""
+        ));
+        assert!(body.contains("crossorigin=\"anonymous\""));
     }
 }
