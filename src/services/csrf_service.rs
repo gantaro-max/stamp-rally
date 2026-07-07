@@ -20,8 +20,20 @@ pub async fn verify_token(session: &Session, submitted: &str) -> bool {
 
     matches!(
         session.get::<String>(CSRF_TOKEN_KEY).await,
-        Ok(Some(token)) if token == submitted
+        Ok(Some(token)) if constant_time_eq(token.as_bytes(), submitted.as_bytes())
     )
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+
+    let diff = left
+        .iter()
+        .zip(right.iter())
+        .fold(0_u8, |acc, (left, right)| acc | (left ^ right));
+    diff == 0
 }
 
 #[cfg(test)]
