@@ -16,7 +16,7 @@
 | 画像処理 | `image` crate（リサイズ） |
 | QRコード生成 | `qrcode` crate（部屋ごとのQR画像を生成） |
 | ビルド | Cargo |
-| ホスティング | Render |
+| ホスティング | Koyeb（詳細は18節） |
 
 ### MysteryBot（Java）との対応
 
@@ -44,8 +44,9 @@ Handler(Axum) → Service → Repository（sqlx） → DB
 
 | 用途 | パス | 説明 |
 |:--|:--|:--|
+| ヘルスチェック | `/health` | 疎通確認用（認証不要・DB非依存。デプロイ先のヘルスチェックにも使用、18節） |
 | 認証 | `/auth/*` | 管理者ログイン・ログアウト |
-| 管理画面 | `/admin/*` | 部屋管理・QRコード発行・設定・ランキング閲覧 |
+| 管理画面 | `/admin/*` | ダッシュボード・部屋管理・QRコード発行・設定・ランキング閲覧 |
 | LINE Webhook | `/callback` | LINE Webhookの受信・処理 |
 | LIFF連携 | `/liff/checkin` | LIFFから送られたQRスキャン結果を受け取るAPI |
 | 画像配信 | `/public/image/{uuid}` | 部屋画像のバイナリ配信（認証不要） |
@@ -96,10 +97,10 @@ Handler(Axum) → Service → Repository（sqlx） → DB
 #### アプリ状態（`AppState`）と `FromRef`
 
 - LINE連携の追加に伴い、`main.rs` の `with_state` を単一の `MySqlPool` から `AppState`（`Clone`）に切り替える
-  - `AppState { pool: MySqlPool, line_channel_secret: Arc<str>, line_channel_access_token: Arc<str>, public_base_url: Arc<str>, pending_registrations: PendingRegistrations }`
+  - `AppState { pool: MySqlPool, line_channel_secret: Arc<str>, line_channel_access_token: Arc<str>, public_base_url: Arc<str>, liff_id: Arc<str>, line_login_channel_id: Arc<str>, verify_id_tokens: bool, pending_registrations: PendingRegistrations, http_client: reqwest::Client, send_line_replies: bool }`（`liff_id`・`line_login_channel_id`はSlice B、`verify_id_tokens`・`send_line_replies`はテスト用フック、`http_client`はLINE API呼び出し共用のため後続スライスで追加）
   - 既存ハンドラーは `State<MySqlPool>` を使い続けられるよう、`impl FromRef<AppState> for MySqlPool`（`state.pool.clone()` を返す）を実装し、既存シグネチャを変更しない
   - LINE Webhook・画像配信ハンドラーは必要に応じて `State<AppState>` や `State<Arc<str>>`（`FromRef` 経由）を使う
-- `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` / `PUBLIC_BASE_URL` は `DATABASE_URL` と同様、起動時に未設定ならエラー出力してプロセスを終了する（`.env.example` に追記済み）
+- `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` / `PUBLIC_BASE_URL` / `LIFF_ID` / `LINE_LOGIN_CHANNEL_ID` は `DATABASE_URL` と同様、起動時に未設定ならエラー出力してプロセスを終了する（`.env.example` に追記済み）
 
 ---
 
@@ -325,7 +326,7 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 |:--|:--|:--|
 | `LINE_CHANNEL_SECRET` | Webhook署名検証用のチャネルシークレット | `DATABASE_URL`と同様、エラー出力してプロセス終了 |
 | `LINE_CHANNEL_ACCESS_TOKEN` | Messaging API呼び出し用のアクセストークン | 同上 |
-| `PUBLIC_BASE_URL` | 画像URL等を組み立てる際に前置する公開ベースURL（末尾スラッシュなし、例 `https://example.onrender.com`） | 同上 |
+| `PUBLIC_BASE_URL` | 画像URL等を組み立てる際に前置する公開ベースURL（末尾スラッシュなし、例 `https://xxxx.koyeb.app`） | 同上 |
 | `LIFF_ID` | LIFFページで `liff.init({ liffId })` に渡すLIFF ID（15節） | 同上（Slice Bから必須化） |
 | `LINE_LOGIN_CHANNEL_ID` | IDトークン検証エンドポイントに渡す `client_id`（LIFFアプリが属するチャネルのID。15節） | 同上（Slice Bで追加） |
 
@@ -392,15 +393,15 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 
 ### ビルド方式: 本番専用Dockerfile（マルチステージビルド）
 
-- `.devcontainer/Dockerfile` はVS Code Dev Containers向け（`sqlx-cli`・clippy等を含む開発用の大きめイメージ）であり、本番デプロイには使わない。Koyebの無料枠インスタンス（リソース制約がある）に適したイメージにするため、リポジトリルートに**本番専用の`Dockerfile`**をマルチステージビルドで新規作成する
-  - ビルドステージ: `rust:1-bookworm`相当のイメージで`cargo build --release`
-  - 実行ステージ: `debian:bookworm-slim`等の軽量イメージに、ビルドステージで生成したバイナリと`ca-certificates`（`reqwest`のTLS通信に必要）のみをコピーする。ソースコード・`target/`の中間成果物は実行イメージに含めない
+- `.devcontainer/Dockerfile` はVS Code Dev Containers向け（`sqlx-cli`・clippy等を含む開発用の大きめイメージ）であり、本番デプロイには使わない。Koyebの無料枠インスタンス（リソース制約がある）に適したイメージにするため、リポジトリルートに**本番専用の`Dockerfile`**をマルチステージビルドで実装済み（#12）
+  - ビルドステージ: `rust:1-bookworm`で`cargo build --release --locked`（`--locked`は`Cargo.lock`との不整合による意図しない依存関係更新を防止する。`SECURITY.md`「依存関係・再現性」の方針に対応）
+  - 実行ステージ: `debian:bookworm-slim`に、ビルドステージで生成したバイナリと`ca-certificates`（`reqwest`のTLS通信に必要）のみをコピーする。ソースコード・`target/`の中間成果物は実行イメージに含めない。非rootユーザー（`appuser`）でアプリケーションを起動する（多層防御）
 - Koyebの当該Webサービスに、このDockerfileを使ってビルド・デプロイするよう設定する（Koyebのgit連携でリポジトリを指定し、Dockerfileベースのビルドを選択する）
 - ヘルスチェックパス: `/health`（Koyebのヘルスチェックに登録。認証不要・DB非依存のエンドポイントなので疎通確認に適する）
 
 ### リッスンポート: `PORT` 環境変数を読む
 
-- Koyeb（および多くのPaaS）は、動的に割り当てた/設定したポート番号を`PORT`環境変数でアプリに伝える方式を採ることが多い。現状の`main.rs`はポート8000を固定でバインドしている（[main.rs:115](../src/main.rs#L115)）ため、環境変数`PORT`が設定されていればその値を、無ければ8000をデフォルトとして使うよう変更する（Koyeb側のポート設定と実際のリッスンポートの不一致を避けるため。実装指示書で対応する）
+- Koyeb（および多くのPaaS）は、動的に割り当てた/設定したポート番号を`PORT`環境変数でアプリに伝える方式を採ることが多い。`main.rs`の`resolve_port`関数が`PORT`環境変数をパースし、未設定・パース失敗時は8000にフォールバックする形で実装済み（#12）。バインド処理（`SocketAddr::from(([0, 0, 0, 0], port))`）もこの値を使う
 
 ### 本番DB: TiDB Serverless
 
@@ -429,3 +430,16 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
 
 - Messaging APIチャネルのWebhook URLを `https://<Koyebドメイン>/callback` に設定し、Webhookの利用をONにする
 - LIFFアプリのエンドポイントURLを `https://<Koyebドメイン>/liff/checkin` に設定する
+
+---
+
+## 19. 管理画面ダッシュボード（`/admin/dashboard`）
+
+- `GET /admin/dashboard` は管理者認証（#3）実装時に「保護ミドルウェアの動作確認用プレースホルダー」（`"ok"`を返すのみ）として仮実装されたまま、後続の各機能スライス（設定・部屋管理・ランキング）でも中身を実装するタスクが積み残しになっていた。[docs/operator-guide.md](operator-guide.md)2節は当初からこのページが備えるべき内容として以下3セクションを記載しており、実装をこの記載に合わせる
+- レイヤー構成: 既存の`event_service::current`（イベント設定取得）と`room_service::list`（部屋一覧取得。件数は戻り値の`Vec`の長さで足りるため、件数専用の別クエリは発行しない）を組み合わせるだけの薄いハンドラーとする。新規のservice関数は不要
+- 表示内容（[docs/operator-guide.md](operator-guide.md)2節と対応）:
+  1. **イベント設定状況**: `is_team_mode`（個人戦/チーム戦）・`require_answer_check`（判定モード）の現在値を表示し、`/admin/settings`へのリンクを設置する
+  2. **部屋一覧**: 登録済み部屋数（`room_service::list`の件数、上限15との対比が分かる形。例:「3 / 15部屋」）を表示し、`/admin/rooms`（部屋ごとの編集・QR表示はそちらに既存の導線がある）へのリンクを設置する。ダッシュボード自体に部屋ごとの個別リンクを複製する必要はない（一覧の二重管理を避けるため）
+  3. **ランキング**: `/admin/ranking`へのリンクを設置する（ダッシュボード側でランキングデータ自体は取得・表示しない。既存の`/admin/ranking`が詳細表示を担う）
+- 他の管理画面同様`admin/_base.html`を継承し、ナビゲーション（部屋管理・設定・ランキング）とログアウトフォームを共有する。ログアウトフォームが要求する`csrf_token`をハンドラーで発行する（他のGET専用管理画面ハンドラー、例: `ranking`と同じパターン）
+- 状態変更を伴わない画面のため、ダッシュボード自体のCSRF保護は不要（共有レイアウトのログアウトフォームのCSRF検証は既存の`/auth/logout`ハンドラー側で行われる）

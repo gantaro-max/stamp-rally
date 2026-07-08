@@ -32,7 +32,7 @@
   - `line_client`：LINE Messaging API（Reply）への送信、クエスト通知用Flex Messageの組み立て（`game_service`はLINE固有のJSON構造・`reqwest`に非依存）
   - `GET /public/image/{uuid}`：部屋画像の公開配信ハンドラーを追加（`room-management`ではスコープ外としていたもの。Flex Messageの画像参照に必要なため本機能で実装）
   - `AppState` を導入（`pool`・LINEチャネル情報・`PUBLIC_BASE_URL`・登録待ち状態を保持）。`FromRef` により既存の `State<MySqlPool>` ハンドラーは無変更で動作
-- 部屋（チェックポイント）管理機能を追加
+- 部屋（チェックポイント）管理機能を追加（#4）
   - `/admin/rooms` 系の一覧・新規登録・編集・削除ハンドラー（最大15部屋、`require_admin` 保護）
   - 画像アップロード（マジックバイト検証・5MBサイズ上限・寸法上限・800px幅/JPEG品質80へのリサイズ）
   - 部屋ごとのQRコード（`qr_uuid`）をその場でPNG生成する `GET /admin/rooms/{id}/qr`

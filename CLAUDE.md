@@ -168,7 +168,7 @@ LINE Bot を使った建物内スタンプラリーアプリ。1建物・最大1
 | 画像処理 | `image` crate |
 | QRコード生成 | `qrcode` crate |
 | ビルド | Cargo |
-| ホスティング | Render（GitHub push で自動デプロイ） |
+| ホスティング | Koyeb（Dockerfileベースのデプロイ。詳細は docs/architecture.md 18節） |
 
 ---
 
