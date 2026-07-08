@@ -61,11 +61,20 @@ impl axum::extract::FromRef<AppState> for MySqlPool {
 }
 
 const ROOM_MULTIPART_BODY_LIMIT: usize = services::image_service::MAX_UPLOAD_BYTES + 64 * 1024;
+const DEFAULT_PORT: u16 = 8000;
+
+fn resolve_port(value: Option<&str>) -> u16 {
+    value
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(DEFAULT_PORT)
+}
 
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
+
+    let port = resolve_port(env::var("PORT").ok().as_deref());
 
     let database_url = env::var("DATABASE_URL").unwrap_or_else(|err| {
         eprintln!("DATABASE_URL must be set: {err}");
@@ -112,7 +121,7 @@ async fn main() {
         line_login_channel_id,
     ));
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .unwrap_or_else(|err| {
@@ -311,6 +320,22 @@ mod tests {
         MySqlPoolOptions::new()
             .connect_lazy("mysql://user:password@localhost/database")
             .unwrap()
+    }
+
+    #[test]
+    fn resolve_port_uses_numeric_env_value() {
+        assert_eq!(super::resolve_port(Some("3000")), 3000);
+    }
+
+    #[test]
+    fn resolve_port_defaults_to_8000_when_unset() {
+        assert_eq!(super::resolve_port(None), 8000);
+    }
+
+    #[test]
+    fn resolve_port_defaults_to_8000_when_invalid() {
+        assert_eq!(super::resolve_port(Some("")), 8000);
+        assert_eq!(super::resolve_port(Some("not-a-number")), 8000);
     }
 
     #[tokio::test]
