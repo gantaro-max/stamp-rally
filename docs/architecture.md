@@ -416,8 +416,8 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
 | `DATABASE_URL` | TiDB Serverlessの接続文字列（`stamprally`専用データベース・専用ユーザー） |
 | `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` | LINE Developersコンソール（Messaging APIチャネル）で発行 |
 | `PUBLIC_BASE_URL` | KoyebのURL（例 `https://xxxx.koyeb.app`。独自ドメインを割り当てる場合はそちらを設定） |
-| `LIFF_ID` | LINE Developersコンソール（LIFFアプリ登録）で発行 |
-| `LINE_LOGIN_CHANNEL_ID` | LIFFアプリが属するチャネルのID |
+| `LIFF_ID` | LINE Developersコンソール、LIFFアプリ登録用に別途作成した**LINEログインチャネル**（Messaging APIチャネルとは別物。Messaging APIチャネルへのLIFF直接追加は廃止されているため）で発行 |
+| `LINE_LOGIN_CHANNEL_ID` | 上記LINEログインチャネル自体のチャネルID（Messaging APIチャネルのIDとは異なる） |
 | `ADMIN_PASSWORD` | 初回起動（`events`が空の時）のみ使用される、管理者ログイン用の初期パスワード |
 
 ### セッションストア・Cookie

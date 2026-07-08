@@ -5,6 +5,12 @@
 ## [Unreleased]
 
 ### Added
+- Koyebへの本番デプロイに向けた土台を整備（#12）
+  - リッスンポートを`PORT`環境変数から決定する`resolve_port`関数を追加（未設定・パース失敗時は8000にフォールバック）。Koyebなど、動的にポート番号を割り当てるPaaS上での起動に対応
+  - 本番用のマルチステージ`Dockerfile`を新規追加（ビルドステージ`rust:1-bookworm` → 実行ステージ`debian:bookworm-slim`）。実行イメージにはコンパイル済みバイナリと`ca-certificates`のみを含め、ソースコード・ビルド中間成果物は含めない（`.devcontainer/Dockerfile`とは別物で、開発用構成は変更していない）
+  - `cargo build --release --locked`でビルドし、`Cargo.lock`との不整合による意図しない依存関係更新を防止
+  - 実行ステージは非rootユーザー（`appuser`）でアプリケーションを起動し、コンテナの多層防御を強化
+  - デプロイ構成の基本設計（ビルド方式・DB分離方針・環境変数・セッションストアの制約等）は`docs/architecture.md`18節、実際のセットアップ手順は`README.md`「本番デプロイ（Koyeb）」に記載
 - ランキング画面を追加（#8）
   - `GET /admin/ranking`：クリア済み参加者を所要時間（`finished_at - started_at`）の短い順に表示。未クリアの参加者は順位を付けず「圏外」セクションに`started_at`昇順で別掲
   - `ranking_service::build_ranking`をDB非依存の純粋関数として実装し、ソート・所要時間の表示形式（1時間未満は`M:SS`、1時間以上は`H:MM:SS`）・同着時の連番順位付けを単体テストで検証

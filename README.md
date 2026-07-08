@@ -46,10 +46,13 @@ Rust（Axum + Tokio） / sqlx（MySQL） / Askama + Bootstrap 5 / Argon2 / LINE 
 
 ### 1. 外部サービスの準備（初回のみ）
 
-1. **LINE Developers コンソール**でMessaging APIチャネルを作成し、`LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` を発行する
-2. 同コンソールでLIFFアプリを追加し、`LIFF_ID` を発行する（エンドポイントURLは手順3でKoyebのURLが確定してから設定する）
-3. LIFFアプリが属するチャネルのIDを `LINE_LOGIN_CHANNEL_ID` として控える
-4. 既存のTiDB Cloudアカウント・クラスタ内に、このアプリ専用のデータベース（`stamprally`）と専用DBユーザーを作成する（既存の別アプリのデータベースとは分離する。詳細は [SECURITY.md](SECURITY.md)「本番DB（TiDB Serverless）の接続方針」）。発行された接続文字列を控える（`DATABASE_URL`に設定する値）
+1. **LINE Official Account Manager**（https://manager.line.biz）で、本アプリ専用のLINE公式アカウントを新規作成する（他アプリ・他イベントの公式アカウントとは別に作成する。名前・アイコンは本イベント用に設定する）
+2. 作成した公式アカウントの設定からMessaging APIを有効化する（2024年9月4日の仕様変更により、LINE Developersコンソールから直接Messaging APIチャネルを新規作成することはできなくなっており、必ずLINE公式アカウント側から有効化する手順を踏む。プロバイダは既存のものを選択できる）
+3. 有効化後、LINE DevelopersコンソールにそのMessaging APIチャネルが表示されるので、そこから`Channel secret`（`LINE_CHANNEL_SECRET`）・`Channel access token`（`LINE_CHANNEL_ACCESS_TOKEN`）を発行する
+4. 同じプロバイダの配下に、LIFFアプリ登録用の**LINEログインチャネル**を新規作成する（Messaging APIチャネルへのLIFF直接追加は廃止されているため、必ず別チャネルとして作成する。LINEミニアプリチャネルという選択肢もあるが、審査は不要になったものの開発/審査/本番の3チャネル構成で運用がやや煩雑なため、非公開の単発イベント用途である本アプリではLINEログインチャネルを選ぶ）
+5. このLINEログインチャネルのLIFFタブでLIFFアプリを追加し、`LIFF_ID` を発行する（エンドポイントURLは「2. Koyebでの初回セットアップ」でKoyebのURLが確定してから設定する）
+6. このLINEログインチャネル自体のチャネルIDを `LINE_LOGIN_CHANNEL_ID` として控える（Messaging APIチャネルのIDとは別物）
+7. 既存のTiDB Cloudアカウント・クラスタ内に、このアプリ専用のデータベース（`stamprally`）と専用DBユーザーを作成する（既存の別アプリのデータベースとは分離する。詳細は [SECURITY.md](SECURITY.md)「本番DB（TiDB Serverless）の接続方針」）。発行された接続文字列を控える（`DATABASE_URL`に設定する値）
 
 ### 2. Koyebでの初回セットアップ
 

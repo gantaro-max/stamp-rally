@@ -71,3 +71,12 @@
 - [ ] `cargo test` が全体で通る
 - [ ] `cargo clippy` が警告なく通る
 - [ ] ブランチをリモートにpushし、Pull Requestを作成した
+
+## 最終レビュー指摘事項（PR #12への追加修正）
+
+Claudeによる最終レビュー（設計整合性・セキュリティ・要件充足・実装指示書・TDD遵守の5観点）を実施した結果、実装自体（`resolve_port`・Dockerfileの構成・TDDサイクル）に問題は無かったが、セキュリティレビューで`Dockerfile`について以下2点の指摘があった。ブロッカーではないが、`SECURITY.md`に明記した方針との整合のため、同じ`feature/koyeb-deploy`ブランチに追加コミットして直してほしい。
+
+- [ ] ケースE: `Dockerfile`のビルドステージ`RUN cargo build --release`を`RUN cargo build --release --locked`に変更する。`Cargo.lock`とマニフェストが不整合な場合に依存関係が黙って更新されるのを防ぐため（`SECURITY.md`「依存関係・再現性」: 「依存クレートのバージョンは`Cargo.lock`で固定する」という既存方針との整合）
+- [ ] ケースF: `Dockerfile`の実行ステージ（`debian:bookworm-slim`以降）に、非rootユーザーでアプリケーションを実行する設定を追加する（多層防御。例: `RUN useradd --system --no-create-home appuser`のようなユーザー追加と、バイナリ起動前の`USER appuser`）。`ca-certificates`のインストールなど`apt-get`が必要な操作は、ユーザー切り替え前（root権限のまま）で完了させること
+
+この2点は振る舞いを持たない設定ファイルの変更のみであり、TDD対象外（[AGENTS.md](../AGENTS.md)108節）。修正後、`docker build`（利用可能な場合）または既存のケースB/Cと同様の代替確認で、イメージのビルドと`GET /health`が引き続き200を返すことを確認すること。
