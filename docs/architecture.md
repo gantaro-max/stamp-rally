@@ -385,3 +385,47 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 - 同着（所要時間が同一）の場合の特別な順位表記（同着1位を2件表示する等）は行わず、単純に到達順で連番を振る
 - `GET /admin/ranking` は他の管理画面と同様 `require_admin` 配下、状態変更を伴わないため CSRF は不要
 - ナビゲーションに「ランキング」リンクを追加する
+
+---
+
+## 18. デプロイ構成（Koyeb）
+
+### ビルド方式: 本番専用Dockerfile（マルチステージビルド）
+
+- `.devcontainer/Dockerfile` はVS Code Dev Containers向け（`sqlx-cli`・clippy等を含む開発用の大きめイメージ）であり、本番デプロイには使わない。Koyebの無料枠インスタンス（リソース制約がある）に適したイメージにするため、リポジトリルートに**本番専用の`Dockerfile`**をマルチステージビルドで新規作成する
+  - ビルドステージ: `rust:1-bookworm`相当のイメージで`cargo build --release`
+  - 実行ステージ: `debian:bookworm-slim`等の軽量イメージに、ビルドステージで生成したバイナリと`ca-certificates`（`reqwest`のTLS通信に必要）のみをコピーする。ソースコード・`target/`の中間成果物は実行イメージに含めない
+- Koyebの当該Webサービスに、このDockerfileを使ってビルド・デプロイするよう設定する（Koyebのgit連携でリポジトリを指定し、Dockerfileベースのビルドを選択する）
+- ヘルスチェックパス: `/health`（Koyebのヘルスチェックに登録。認証不要・DB非依存のエンドポイントなので疎通確認に適する）
+
+### リッスンポート: `PORT` 環境変数を読む
+
+- Koyeb（および多くのPaaS）は、動的に割り当てた/設定したポート番号を`PORT`環境変数でアプリに伝える方式を採ることが多い。現状の`main.rs`はポート8000を固定でバインドしている（[main.rs:115](../src/main.rs#L115)）ため、環境変数`PORT`が設定されていればその値を、無ければ8000をデフォルトとして使うよう変更する（Koyeb側のポート設定と実際のリッスンポートの不一致を避けるため。実装指示書で対応する）
+
+### 本番DB: TiDB Serverless
+
+- 本番DBは既存の別アプリと同じTiDB Cloudアカウント・同じクラスタを共用する（クラスタ単位ではなく**データベース単位**で分離する）。このアプリ専用のデータベース（`stamprally`）と、そのデータベースにのみ権限を持つ専用DBユーザーを作成し、発行される接続文字列（TLS必須）を`DATABASE_URL`に設定する。既存アプリとの分離方針・パブリックエンドポイントであることの受容リスクの詳細は [SECURITY.md](../SECURITY.md)「本番DB（TiDB Serverless）の接続方針」を参照
+- **起動時の自動マイグレーションは行わない**（`main.rs`に`sqlx::migrate!()`の呼び出しは無く、意図的にその設計を踏襲する）。スキーマ変更を含むリリースでは、developerが手元から本番の`DATABASE_URL`を指定して`sqlx migrate run`を実行し、反映を確認してからコードをデプロイする運用とする（自動化は対象規模（1建物・1イベント運用）に対して過剰と判断）
+
+### 環境変数
+
+Koyebの Environment Variables（Secrets）に以下を設定する。値はKoyebダッシュボードから個別に入力し、リポジトリには含めない。
+
+| 変数 | 本番での値の目安 |
+|:--|:--|
+| `DATABASE_URL` | TiDB Serverlessの接続文字列（`stamprally`専用データベース・専用ユーザー） |
+| `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` | LINE Developersコンソール（Messaging APIチャネル）で発行 |
+| `PUBLIC_BASE_URL` | KoyebのURL（例 `https://xxxx.koyeb.app`。独自ドメインを割り当てる場合はそちらを設定） |
+| `LIFF_ID` | LINE Developersコンソール（LIFFアプリ登録）で発行 |
+| `LINE_LOGIN_CHANNEL_ID` | LIFFアプリが属するチャネルのID |
+| `ADMIN_PASSWORD` | 初回起動（`events`が空の時）のみ使用される、管理者ログイン用の初期パスワード |
+
+### セッションストア・Cookie
+
+- セッションストアは現状の`MemoryStore`（プロセス内メモリ）のまま運用する。前提として **Koyebの無料枠Webサービスは常時起動のインスタンス1台構成**（スケールアウトしない）であること。もし利用中に複数インスタンスへのオートスケールが有効な構成になっている場合、セッション・登録待ち状態がインスタンス間で共有されず不整合が起きるため、インスタンス数が1に固定されていることをKoyebの設定で確認すること。複数インスタンス構成が必要になった場合はセッションストアの外部化が必要になるが、対象規模（1建物・1イベント運用、[docs/requirements.md](requirements.md)4節）から現時点ではスコープ外とする
+- セッションCookieの`Secure`属性は`tower-sessions`のデフォルト（`true`）のまま変更不要（[main.rs](../src/main.rs)で`.with_secure(false)`等の上書きをしていないことを確認済み）。本番はKoyebがTLS終端するHTTPS配信のため問題なく送信される。ローカル開発（`http://localhost`）でも動作に支障はない（`localhost`はブラウザ・主要HTTPクライアントから「trustworthy origin」として扱われ、Secure Cookieの送受信が許可されるため）
+
+### LINE Developers コンソール側の設定（Koyeb URL確定後に反映）
+
+- Messaging APIチャネルのWebhook URLを `https://<Koyebドメイン>/callback` に設定し、Webhookの利用をONにする
+- LIFFアプリのエンドポイントURLを `https://<Koyebドメイン>/liff/checkin` に設定する
