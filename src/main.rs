@@ -313,6 +313,22 @@ mod tests {
             .unwrap()
     }
 
+    #[test]
+    fn resolve_port_uses_numeric_env_value() {
+        assert_eq!(super::resolve_port(Some("3000")), 3000);
+    }
+
+    #[test]
+    fn resolve_port_defaults_to_8000_when_unset() {
+        assert_eq!(super::resolve_port(None), 8000);
+    }
+
+    #[test]
+    fn resolve_port_defaults_to_8000_when_invalid() {
+        assert_eq!(super::resolve_port(Some("")), 8000);
+        assert_eq!(super::resolve_port(Some("not-a-number")), 8000);
+    }
+
     #[tokio::test]
     async fn app_router_registers_health_route() {
         let response = app_router(test_pool())
