@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Added
+- 管理画面ダッシュボードを実装（#13）
+  - `GET /admin/dashboard`：管理者認証実装時からの仮実装（`"ok"`を返すのみ）を置き換え、イベント設定状況（個人戦/チーム戦・判定モード）・部屋登録数（`n / 15部屋`）・ランキングへのリンクを表示する画面を追加
+  - ハンドラーは既存の`event_service::current`・`room_service::list`を組み合わせるのみの薄い実装とし、新規service/repository関数は追加していない。部屋ごとの個別リンクはダッシュボードに複製せず`/admin/rooms`側の既存導線に一本化（一覧の二重管理を避けるため）
+  - `docs/operator-guide.md`2節の記載とダッシュボードの実装が食い違っていた状態を解消
 - Koyebへの本番デプロイに向けた土台を整備（#12）
   - リッスンポートを`PORT`環境変数から決定する`resolve_port`関数を追加（未設定・パース失敗時は8000にフォールバック）。Koyebなど、動的にポート番号を割り当てるPaaS上での起動に対応
   - 本番用のマルチステージ`Dockerfile`を新規追加（ビルドステージ`rust:1-bookworm` → 実行ステージ`debian:bookworm-slim`）。実行イメージにはコンパイル済みバイナリと`ca-certificates`のみを含め、ソースコード・ビルド中間成果物は含めない（`.devcontainer/Dockerfile`とは別物で、開発用構成は変更していない）
