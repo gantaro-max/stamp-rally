@@ -59,6 +59,7 @@
   - `handlers` / `services` / `repository` の初期モジュール構成を追加
 
 ### Fixed
+- `sqlx`依存にTLSバックエンド（`tls-native-tls`）が指定されておらず、TLS必須接続の本番DB（TiDB Serverless）に接続しようとした瞬間に`"SQLx was built without TLS support enabled"`エラーで起動不能になる不具合を修正。Koyeb本番デプロイに向けた疎通確認作業（`sqlx migrate run`）で発覚した。`reqwest`が既に依存している`native-tls`（システムのOpenSSL、本番用`Dockerfile`が`ca-certificates`を含む既存方針）を再利用する形とし、`rustls`系は新たに導入していない（#14）
 - `POST /admin/settings` で、チェックボックス（個人戦/チーム戦・判定モード）にチェックを入れて送信すると、HTMLが送る値`"on"`をAxumの`Form`抽出（bool型）が受け付けられず、常に422でハンドラーに到達できなかった不具合を修正（`"on"`/`"true"`を`true`として扱うカスタムデシリアライザを追加）。事実上、設定画面から各項目をONに切り替える操作が一切機能していなかった（#10）
 
 ### Changed
