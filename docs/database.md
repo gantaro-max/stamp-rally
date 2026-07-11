@@ -14,6 +14,7 @@ DB: MySQL 8.0（ローカル） / TiDB Serverless（本番）
 | `players` | 参加者（LINEユーザー×イベント） |
 | `visited_rooms` | 訪問済み部屋の記録 |
 | `room_images` | 部屋の画像バイナリ（UUIDで公開URL生成） |
+| `pending_registrations` | LINE Botの参加登録の一時状態（「開始」〜名前入力までの間）。Koyeb無料枠のスケールtoゼロに耐えるためDB永続化する（[architecture.md 9節](architecture.md#9-会話状態管理参加登録の一時状態)） |
 
 ---
 
@@ -95,12 +96,27 @@ DB: MySQL 8.0（ローカル） / TiDB Serverless（本番）
 
 ---
 
+## pending_registrations（参加登録の一時状態）
+
+| カラム | 型 | 説明 |
+|:--|:--|:--|
+| `line_user_id` | VARCHAR(255) | LINE User ID |
+| `event_id` | INT(FK) | 対象イベント（`events` 参照、`ON DELETE CASCADE`） |
+| `created_at` | DATETIME | 登録待ち状態になった日時 |
+
+複合主キー: `(line_user_id, event_id)`
+
+「開始」コマンド受信時に1行追加し、名前入力で`players`行を作成した後（または「リセット」受信時）に削除する。`players`行と異なりこのテーブルの行は一時的なものであり、名前確定前の状態のみを表す。
+
+---
+
 ## ER概要
 
 ```mermaid
 erDiagram
     events ||--o{ rooms : "has"
     events ||--o{ players : "has"
+    events ||--o{ pending_registrations : "has"
     rooms ||--o| room_images : "has"
     rooms ||--o{ visited_rooms : "visited by"
     players ||--o{ visited_rooms : "visits"
