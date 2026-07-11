@@ -1,15 +1,9 @@
-use std::{
-    collections::HashSet,
-    sync::{Arc, Mutex},
-};
-
 use sqlx::MySqlPool;
 
 use crate::repository::{
-    event_repository, player_repository, room_image_repository, room_repository,
+    event_repository, pending_registration_repository, player_repository, room_image_repository,
+    room_repository,
 };
-
-pub type PendingRegistrations = Arc<Mutex<HashSet<String>>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReplyMessage {
@@ -60,7 +54,6 @@ impl std::error::Error for GameServiceError {}
 
 pub async fn handle_text_message(
     pool: &MySqlPool,
-    pending: &PendingRegistrations,
     public_base_url: &str,
     line_user_id: &str,
     text: &str,
@@ -79,7 +72,8 @@ pub async fn handle_text_message(
     }
 
     if text == "リセット" {
-        let had_pending = was_pending_removed(pending, line_user_id);
+        let had_pending =
+            pending_registration_repository::delete(pool, line_user_id, event.id).await?;
         if player.is_some() {
             player_repository::delete_by_line_user_and_event(pool, line_user_id, event.id).await?;
             return Ok(ReplyMessage::Text(
@@ -105,25 +99,27 @@ pub async fn handle_text_message(
             }
             return quest_reply_for_player(pool, public_base_url, player).await;
         }
-        if is_pending(pending, line_user_id) {
+        if pending_registration_repository::exists(pool, line_user_id, event.id).await? {
             return Ok(ReplyMessage::Text(name_prompt(event.is_team_mode)));
         }
-        add_pending(pending, line_user_id);
+        pending_registration_repository::insert(pool, line_user_id, event.id).await?;
         return Ok(ReplyMessage::Text(name_prompt(event.is_team_mode)));
     }
 
-    if player.is_none() && is_pending(pending, line_user_id) {
+    if player.is_none()
+        && pending_registration_repository::exists(pool, line_user_id, event.id).await?
+    {
         if text.is_empty() {
             return Ok(ReplyMessage::Text(name_prompt(event.is_team_mode)));
         }
         if room_repository::count(pool, event.id).await? == 0 {
-            remove_pending(pending, line_user_id);
+            pending_registration_repository::delete(pool, line_user_id, event.id).await?;
             return Ok(ReplyMessage::Text(
                 "参加できる部屋が登録されていません。管理者にお問い合わせください。".to_string(),
             ));
         }
         let player_id = player_repository::insert(pool, line_user_id, event.id, text).await?;
-        remove_pending(pending, line_user_id);
+        pending_registration_repository::delete(pool, line_user_id, event.id).await?;
         let Some(room) = room_repository::find_random_unvisited(pool, event.id, player_id).await?
         else {
             return Ok(ReplyMessage::Text(
@@ -251,22 +247,6 @@ fn name_prompt(is_team_mode: bool) -> String {
     }
 }
 
-fn is_pending(pending: &PendingRegistrations, line_user_id: &str) -> bool {
-    pending.lock().unwrap().contains(line_user_id)
-}
-
-fn add_pending(pending: &PendingRegistrations, line_user_id: &str) {
-    pending.lock().unwrap().insert(line_user_id.to_string());
-}
-
-fn remove_pending(pending: &PendingRegistrations, line_user_id: &str) {
-    pending.lock().unwrap().remove(line_user_id);
-}
-
-fn was_pending_removed(pending: &PendingRegistrations, line_user_id: &str) -> bool {
-    pending.lock().unwrap().remove(line_user_id)
-}
-
 async fn quest_reply_for_player(
     pool: &MySqlPool,
     public_base_url: &str,
@@ -325,47 +305,42 @@ fn is_correct_answer(answer: Option<&str>, text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
-    use super::{PendingRegistrations, ReplyMessage};
+    use super::ReplyMessage;
+    use crate::repository::pending_registration_repository;
     use sqlx::Row;
 
     const PUBLIC_BASE_URL: &str = "https://example.test";
 
-    fn pending() -> PendingRegistrations {
-        Arc::new(Mutex::new(std::collections::HashSet::new()))
-    }
-
     async fn insert_pending(pool: &sqlx::MySqlPool, line_user_id: &str, event_id: i32) {
-        sqlx::query(
-            r#"
-            INSERT INTO pending_registrations (line_user_id, event_id, created_at)
-            VALUES (?, ?, NOW())
-            ON DUPLICATE KEY UPDATE created_at = VALUES(created_at)
-            "#,
-        )
-        .bind(line_user_id)
-        .bind(event_id)
-        .execute(pool)
-        .await
-        .unwrap();
+        pending_registration_repository::insert(pool, line_user_id, event_id)
+            .await
+            .unwrap();
     }
 
     async fn pending_exists(pool: &sqlx::MySqlPool, line_user_id: &str, event_id: i32) -> bool {
-        let row = sqlx::query(
-            r#"
-            SELECT COUNT(*) AS count
-            FROM pending_registrations
-            WHERE line_user_id = ? AND event_id = ?
-            "#,
-        )
-        .bind(line_user_id)
-        .bind(event_id)
-        .fetch_one(pool)
-        .await
-        .unwrap();
+        pending_registration_repository::exists(pool, line_user_id, event_id)
+            .await
+            .unwrap()
+    }
 
-        row.try_get::<i64, _>("count").unwrap() > 0
+    async fn same_database_url(pool: &sqlx::MySqlPool) -> String {
+        let row = sqlx::query("SELECT DATABASE() AS db_name")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        let db_name: String = row.try_get("db_name").unwrap();
+        let database_url = std::env::var("DATABASE_URL").unwrap();
+        let (base, query) = database_url
+            .split_once('?')
+            .map_or((database_url.as_str(), ""), |(base, query)| (base, query));
+        let slash_index = base.rfind('/').unwrap();
+        let query = if query.is_empty() {
+            String::new()
+        } else {
+            format!("?{query}")
+        };
+
+        format!("{}{db_name}{query}", &base[..=slash_index])
     }
 
     async fn seed_event(pool: &sqlx::MySqlPool) -> i32 {
@@ -460,17 +435,10 @@ mod tests {
     #[sqlx::test]
     async fn starts_registration_for_individual_event(pool: sqlx::MySqlPool) {
         let event_id = set_event_flags(&pool, false, false).await;
-        let pending = pending();
-
-        let reply = super::handle_text_message(
-            &pool,
-            &pending,
-            PUBLIC_BASE_URL,
-            "line-start-individual",
-            "開始",
-        )
-        .await
-        .unwrap();
+        let reply =
+            super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-start-individual", "開始")
+                .await
+                .unwrap();
 
         assert!(text(reply).contains("個人名"));
         assert!(pending_exists(&pool, "line-start-individual", event_id).await);
@@ -479,12 +447,9 @@ mod tests {
     #[sqlx::test]
     async fn starts_registration_for_team_event(pool: sqlx::MySqlPool) {
         set_event_flags(&pool, true, false).await;
-        let pending = pending();
-
-        let reply =
-            super::handle_text_message(&pool, &pending, PUBLIC_BASE_URL, "line-start-team", "開始")
-                .await
-                .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-start-team", "開始")
+            .await
+            .unwrap();
 
         assert!(text(reply).contains("チーム名"));
     }
@@ -493,13 +458,11 @@ mod tests {
     async fn pending_name_creates_player_assigns_room_and_returns_quest(pool: sqlx::MySqlPool) {
         let event_id = set_event_flags(&pool, false, false).await;
         seed_room(&pool, event_id, "Library", None, None).await;
-        let pending = pending();
         insert_pending(&pool, "line-name", event_id).await;
 
-        let reply =
-            super::handle_text_message(&pool, &pending, PUBLIC_BASE_URL, "line-name", "Alice")
-                .await
-                .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-name", "Alice")
+            .await
+            .unwrap();
         let (room_name, quest_text, image_url) = quest(reply);
         let player = crate::repository::player_repository::find_by_line_user_and_event(
             &pool,
@@ -520,13 +483,11 @@ mod tests {
     #[sqlx::test]
     async fn pending_blank_name_prompts_again_without_creating_player(pool: sqlx::MySqlPool) {
         let event_id = set_event_flags(&pool, false, false).await;
-        let pending = pending();
         insert_pending(&pool, "line-blank", event_id).await;
 
-        let reply =
-            super::handle_text_message(&pool, &pending, PUBLIC_BASE_URL, "line-blank", "   ")
-                .await
-                .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-blank", "   ")
+            .await
+            .unwrap();
 
         assert!(text(reply).contains("入力"));
         assert!(
@@ -547,13 +508,11 @@ mod tests {
         pool: sqlx::MySqlPool,
     ) {
         let event_id = set_event_flags(&pool, false, false).await;
-        let pending = pending();
         insert_pending(&pool, "line-no-room", event_id).await;
 
-        let reply =
-            super::handle_text_message(&pool, &pending, PUBLIC_BASE_URL, "line-no-room", "Alice")
-                .await
-                .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-no-room", "Alice")
+            .await
+            .unwrap();
 
         assert!(text(reply).contains("部屋が登録されていません"));
         assert!(
@@ -575,15 +534,10 @@ mod tests {
         let (_player_id, room_id) =
             seed_player_with_room(&pool, event_id, "line-registered-start", false).await;
 
-        let reply = super::handle_text_message(
-            &pool,
-            &pending(),
-            PUBLIC_BASE_URL,
-            "line-registered-start",
-            "開始",
-        )
-        .await
-        .unwrap();
+        let reply =
+            super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-registered-start", "開始")
+                .await
+                .unwrap();
         let player = crate::repository::player_repository::find_by_line_user_and_event(
             &pool,
             "line-registered-start",
@@ -608,10 +562,9 @@ mod tests {
             .await
             .unwrap();
 
-        let reply =
-            super::handle_text_message(&pool, &pending(), PUBLIC_BASE_URL, "line-finished", "開始")
-                .await
-                .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-finished", "開始")
+            .await
+            .unwrap();
 
         assert!(text(reply).contains("クリア済み"));
     }
@@ -621,15 +574,9 @@ mod tests {
         let event_id = set_event_flags(&pool, false, false).await;
         seed_player_with_room(&pool, event_id, "line-reset", false).await;
 
-        let reply = super::handle_text_message(
-            &pool,
-            &pending(),
-            PUBLIC_BASE_URL,
-            "line-reset",
-            "リセット",
-        )
-        .await
-        .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-reset", "リセット")
+            .await
+            .unwrap();
 
         assert!(text(reply).contains("削除"));
         assert!(
@@ -648,15 +595,10 @@ mod tests {
     async fn unregistered_reset_reports_not_registered(pool: sqlx::MySqlPool) {
         set_event_flags(&pool, false, false).await;
 
-        let reply = super::handle_text_message(
-            &pool,
-            &pending(),
-            PUBLIC_BASE_URL,
-            "line-reset-missing",
-            "リセット",
-        )
-        .await
-        .unwrap();
+        let reply =
+            super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-reset-missing", "リセット")
+                .await
+                .unwrap();
 
         assert!(text(reply).contains("参加登録されていません"));
     }
@@ -664,18 +606,12 @@ mod tests {
     #[sqlx::test]
     async fn pending_reset_cancels_registration(pool: sqlx::MySqlPool) {
         let event_id = set_event_flags(&pool, false, false).await;
-        let pending = pending();
         insert_pending(&pool, "line-reset-pending", event_id).await;
 
-        let reply = super::handle_text_message(
-            &pool,
-            &pending,
-            PUBLIC_BASE_URL,
-            "line-reset-pending",
-            "リセット",
-        )
-        .await
-        .unwrap();
+        let reply =
+            super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-reset-pending", "リセット")
+                .await
+                .unwrap();
 
         assert!(text(reply).contains("キャンセル"));
         assert!(!pending_exists(&pool, "line-reset-pending", event_id).await);
@@ -684,18 +620,11 @@ mod tests {
     #[sqlx::test]
     async fn repeated_start_keeps_single_pending_registration(pool: sqlx::MySqlPool) {
         let event_id = set_event_flags(&pool, false, false).await;
-        let pending = pending();
         insert_pending(&pool, "line-repeat-start", event_id).await;
 
-        let reply = super::handle_text_message(
-            &pool,
-            &pending,
-            PUBLIC_BASE_URL,
-            "line-repeat-start",
-            "開始",
-        )
-        .await
-        .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-repeat-start", "開始")
+            .await
+            .unwrap();
         let row = sqlx::query(
             r#"
             SELECT COUNT(*) AS count
@@ -717,17 +646,11 @@ mod tests {
     async fn pending_registration_survives_pool_recreation(pool: sqlx::MySqlPool) {
         let event_id = set_event_flags(&pool, false, false).await;
         seed_room(&pool, event_id, "Library", None, None).await;
-        let database_url = std::env::var("DATABASE_URL").unwrap();
+        let database_url = same_database_url(&pool).await;
 
-        let reply = super::handle_text_message(
-            &pool,
-            &pending(),
-            PUBLIC_BASE_URL,
-            "line-restarted",
-            "開始",
-        )
-        .await
-        .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-restarted", "開始")
+            .await
+            .unwrap();
         assert!(text(reply).contains("個人名"));
         assert!(pending_exists(&pool, "line-restarted", event_id).await);
 
@@ -736,15 +659,10 @@ mod tests {
             .connect(&database_url)
             .await
             .unwrap();
-        let reply = super::handle_text_message(
-            &fresh_pool,
-            &pending(),
-            PUBLIC_BASE_URL,
-            "line-restarted",
-            "Alice",
-        )
-        .await
-        .unwrap();
+        let reply =
+            super::handle_text_message(&fresh_pool, PUBLIC_BASE_URL, "line-restarted", "Alice")
+                .await
+                .unwrap();
         let player = crate::repository::player_repository::find_by_line_user_and_event(
             &fresh_pool,
             "line-restarted",
@@ -762,14 +680,10 @@ mod tests {
     #[sqlx::test]
     async fn help_always_returns_guide(pool: sqlx::MySqlPool) {
         set_event_flags(&pool, false, false).await;
-        let pending = pending();
-        pending.lock().unwrap().insert("line-help".to_string());
-
         for command in ["遊び方", "ヘルプ"] {
-            let reply =
-                super::handle_text_message(&pool, &pending, PUBLIC_BASE_URL, "line-help", command)
-                    .await
-                    .unwrap();
+            let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-help", command)
+                .await
+                .unwrap();
             assert!(text(reply).contains("開始"));
         }
     }
@@ -779,15 +693,9 @@ mod tests {
         let event_id = set_event_flags(&pool, false, false).await;
         seed_player_with_room(&pool, event_id, "line-hint-off", false).await;
 
-        let reply = super::handle_text_message(
-            &pool,
-            &pending(),
-            PUBLIC_BASE_URL,
-            "line-hint-off",
-            "ヒント",
-        )
-        .await
-        .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-hint-off", "ヒント")
+            .await
+            .unwrap();
 
         assert!(text(reply).contains("利用できません"));
     }
@@ -797,15 +705,9 @@ mod tests {
         let event_id = set_event_flags(&pool, false, true).await;
         seed_player_with_room(&pool, event_id, "line-hint-on", true).await;
 
-        let reply = super::handle_text_message(
-            &pool,
-            &pending(),
-            PUBLIC_BASE_URL,
-            "line-hint-on",
-            "ヒント",
-        )
-        .await
-        .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-hint-on", "ヒント")
+            .await
+            .unwrap();
 
         assert_eq!(text(reply), "Look near the shelf");
     }
@@ -826,15 +728,10 @@ mod tests {
             .await
             .unwrap();
 
-        let reply = super::handle_text_message(
-            &pool,
-            &pending(),
-            PUBLIC_BASE_URL,
-            "line-hint-missing",
-            "ヒント",
-        )
-        .await
-        .unwrap();
+        let reply =
+            super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-hint-missing", "ヒント")
+                .await
+                .unwrap();
 
         assert!(text(reply).contains("登録されていません"));
     }
@@ -845,10 +742,9 @@ mod tests {
         let (player_id, _room_id) =
             seed_player_with_room(&pool, event_id, "line-correct", true).await;
 
-        let reply =
-            super::handle_text_message(&pool, &pending(), PUBLIC_BASE_URL, "line-correct", " red ")
-                .await
-                .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-correct", " red ")
+            .await
+            .unwrap();
         let player = crate::repository::player_repository::find_by_line_user_and_event(
             &pool,
             "line-correct",
@@ -868,10 +764,9 @@ mod tests {
         let event_id = set_event_flags(&pool, false, true).await;
         seed_player_with_room(&pool, event_id, "line-wrong", true).await;
 
-        let reply =
-            super::handle_text_message(&pool, &pending(), PUBLIC_BASE_URL, "line-wrong", "green")
-                .await
-                .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-wrong", "green")
+            .await
+            .unwrap();
         let player = crate::repository::player_repository::find_by_line_user_and_event(
             &pool,
             "line-wrong",
@@ -894,15 +789,9 @@ mod tests {
             .await
             .unwrap();
 
-        let reply = super::handle_text_message(
-            &pool,
-            &pending(),
-            PUBLIC_BASE_URL,
-            "line-verified",
-            "anything",
-        )
-        .await
-        .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-verified", "anything")
+            .await
+            .unwrap();
 
         assert!(text(reply).contains("QR"));
     }
@@ -912,10 +801,9 @@ mod tests {
         let event_id = set_event_flags(&pool, false, false).await;
         seed_player_with_room(&pool, event_id, "line-free", false).await;
 
-        let reply =
-            super::handle_text_message(&pool, &pending(), PUBLIC_BASE_URL, "line-free", "anything")
-                .await
-                .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-free", "anything")
+            .await
+            .unwrap();
 
         assert!(text(reply).contains("QRコード"));
     }
@@ -924,10 +812,9 @@ mod tests {
     async fn unregistered_free_text_prompts_start(pool: sqlx::MySqlPool) {
         set_event_flags(&pool, false, false).await;
 
-        let reply =
-            super::handle_text_message(&pool, &pending(), PUBLIC_BASE_URL, "line-unknown", "hello")
-                .await
-                .unwrap();
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-unknown", "hello")
+            .await
+            .unwrap();
 
         assert!(text(reply).contains("開始"));
     }

@@ -79,7 +79,6 @@ pub async fn callback(
 
         let reply = match game_service::handle_text_message(
             &state.pool,
-            &state.pending_registrations,
             &state.public_base_url,
             &user_id,
             &text,
@@ -148,7 +147,12 @@ mod tests {
             "test-login-channel-id",
         );
         state.send_line_replies = false;
-        let pending = state.pending_registrations.clone();
+        let event_id = crate::repository::event_repository::find_singleton(&state.pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let pool = state.pool.clone();
         let app = Router::new()
             .route("/callback", post(super::callback))
             .with_state(state);
@@ -170,6 +174,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
-        assert!(pending.lock().unwrap().contains("line-valid"));
+        assert!(
+            crate::repository::pending_registration_repository::exists(
+                &pool,
+                "line-valid",
+                event_id
+            )
+            .await
+            .unwrap()
+        );
     }
 }
