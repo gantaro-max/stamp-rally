@@ -79,6 +79,7 @@ pub fn build_quest_flex_message(
     room_name: &str,
     quest_text: &str,
     image_url: Option<&str>,
+    liff_id: &str,
 ) -> Value {
     let mut contents = json!({
         "type": "bubble",
@@ -102,6 +103,22 @@ pub fn build_quest_flex_message(
         });
     }
 
+    contents["footer"] = json!({
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+            {
+                "type": "button",
+                "style": "primary",
+                "action": {
+                    "type": "uri",
+                    "label": "QRを読む",
+                    "uri": format!("https://liff.line.me/{liff_id}")
+                }
+            }
+        ]
+    });
+
     json!({
         "type": "flex",
         "altText": format!("{room_name} のクエスト"),
@@ -109,14 +126,14 @@ pub fn build_quest_flex_message(
     })
 }
 
-pub fn to_line_message(reply: &ReplyMessage) -> Value {
+pub fn to_line_message(reply: &ReplyMessage, liff_id: &str) -> Value {
     match reply {
         ReplyMessage::Text(text) => build_text_message(text),
         ReplyMessage::Quest {
             room_name,
             quest_text,
             image_url,
-        } => build_quest_flex_message(room_name, quest_text, image_url.as_deref()),
+        } => build_quest_flex_message(room_name, quest_text, image_url.as_deref(), liff_id),
     }
 }
 
@@ -263,6 +280,7 @@ mod tests {
             "Library",
             "Find the red book",
             Some("https://example.test/public/image/image-uuid"),
+            "test-liff-id",
         );
 
         assert_eq!(message["type"], "flex");
@@ -279,15 +297,49 @@ mod tests {
             message["contents"]["body"]["contents"][1]["text"],
             "Find the red book"
         );
+        assert_eq!(
+            message["contents"]["footer"]["contents"][0]["action"]["type"],
+            "uri"
+        );
+        assert_eq!(
+            message["contents"]["footer"]["contents"][0]["action"]["label"],
+            "QRを読む"
+        );
+        assert_eq!(
+            message["contents"]["footer"]["contents"][0]["action"]["uri"],
+            "https://liff.line.me/test-liff-id"
+        );
     }
 
     #[test]
     fn build_quest_flex_message_omits_hero_when_image_url_is_absent() {
-        let message = super::build_quest_flex_message("Library", "Find the red book", None);
+        let message =
+            super::build_quest_flex_message("Library", "Find the red book", None, "test-liff-id");
 
         assert_eq!(message["type"], "flex");
         assert!(message["contents"].get("hero").is_none());
         assert_eq!(message["altText"], "Library のクエスト");
+        assert_eq!(
+            message["contents"]["footer"]["contents"][0]["action"]["uri"],
+            "https://liff.line.me/test-liff-id"
+        );
+    }
+
+    #[test]
+    fn to_line_message_passes_liff_id_to_quest_message() {
+        let reply = crate::services::game_service::ReplyMessage::Quest {
+            room_name: "Library".to_string(),
+            quest_text: "Find the red book".to_string(),
+            image_url: None,
+        };
+
+        let message = super::to_line_message(&reply, "quest-liff-id");
+
+        assert_eq!(message["type"], "flex");
+        assert_eq!(
+            message["contents"]["footer"]["contents"][0]["action"]["uri"],
+            "https://liff.line.me/quest-liff-id"
+        );
     }
 
     #[test]
@@ -316,11 +368,11 @@ mod tests {
         );
 
         assert_eq!(
-            super::to_line_message(&next),
+            super::to_line_message(&next, "ignored-liff-id"),
             json!({"type": "text", "text": "次の部屋をLINEで確認してください。"})
         );
         assert_eq!(
-            super::to_line_message(&cleared),
+            super::to_line_message(&cleared, "ignored-liff-id"),
             json!({"type": "text", "text": "クリアしました！最初の部屋に戻ってください。お疲れ様でした！"})
         );
     }

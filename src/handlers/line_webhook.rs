@@ -94,7 +94,7 @@ pub async fn callback(
         if !state.send_line_replies {
             continue;
         }
-        let message = line_client::to_line_message(&reply);
+        let message = line_client::to_line_message(&reply, &state.liff_id);
         if let Err(err) = line_client::send_reply(
             &state.http_client,
             &state.line_channel_access_token,
