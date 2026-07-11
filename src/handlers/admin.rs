@@ -9,10 +9,41 @@ use serde::Deserialize;
 use sqlx::MySqlPool;
 use tower_sessions::Session;
 
-use crate::services::{csrf_service, event_service, ranking_service};
+use crate::services::{csrf_service, event_service, ranking_service, room_service};
 
-pub async fn dashboard() -> &'static str {
-    "ok"
+#[derive(Template)]
+#[template(path = "admin/dashboard.html")]
+struct DashboardTemplate {
+    csrf_token: String,
+    is_team_mode: bool,
+    require_answer_check: bool,
+    room_count: usize,
+}
+
+pub async fn dashboard(session: Session, State(pool): State<MySqlPool>) -> Response {
+    let csrf_token = match csrf_service::issue_token(&session).await {
+        Ok(token) => token,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let event = match event_service::current(&pool).await {
+        Ok(event) => event,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let rooms = match room_service::list(&pool, event.id).await {
+        Ok(rooms) => rooms,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let template = DashboardTemplate {
+        csrf_token,
+        is_team_mode: event.is_team_mode,
+        require_answer_check: event.require_answer_check,
+        room_count: rooms.len(),
+    };
+
+    match template.render() {
+        Ok(body) => Html(body).into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 #[derive(Template)]
