@@ -358,6 +358,13 @@ mod tests {
         assert_eq!(super::resolve_port(Some("not-a-number")), 8000);
     }
 
+    #[test]
+    fn sqlx_dependency_explicitly_enables_native_tls() {
+        let manifest = std::fs::read_to_string("Cargo.toml").unwrap();
+
+        assert!(manifest.contains(r#""tls-native-tls""#));
+    }
+
     #[tokio::test]
     async fn app_router_registers_health_route() {
         let response = app_router(test_pool())
