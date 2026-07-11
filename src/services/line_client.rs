@@ -79,6 +79,7 @@ pub fn build_quest_flex_message(
     room_name: &str,
     quest_text: &str,
     image_url: Option<&str>,
+    liff_id: &str,
 ) -> Value {
     let mut contents = json!({
         "type": "bubble",
@@ -102,6 +103,22 @@ pub fn build_quest_flex_message(
         });
     }
 
+    contents["footer"] = json!({
+        "type": "box",
+        "layout": "vertical",
+        "contents": [
+            {
+                "type": "button",
+                "style": "primary",
+                "action": {
+                    "type": "uri",
+                    "label": "QRを読む",
+                    "uri": format!("https://liff.line.me/{liff_id}")
+                }
+            }
+        ]
+    });
+
     json!({
         "type": "flex",
         "altText": format!("{room_name} のクエスト"),
@@ -109,14 +126,14 @@ pub fn build_quest_flex_message(
     })
 }
 
-pub fn to_line_message(reply: &ReplyMessage) -> Value {
+pub fn to_line_message(reply: &ReplyMessage, liff_id: &str) -> Value {
     match reply {
         ReplyMessage::Text(text) => build_text_message(text),
         ReplyMessage::Quest {
             room_name,
             quest_text,
             image_url,
-        } => build_quest_flex_message(room_name, quest_text, image_url.as_deref()),
+        } => build_quest_flex_message(room_name, quest_text, image_url.as_deref(), liff_id),
     }
 }
 
