@@ -280,6 +280,26 @@ mod tests {
         (cookie, extract_csrf_token(&body))
     }
 
+    async fn login_as_admin(app: Router) -> String {
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        extract_cookie(&response)
+    }
+
     async fn seed_authenticated_logout_session(session: Session) -> &'static str {
         session.insert("admin_authenticated", true).await.unwrap();
         session.insert("csrf_token", "valid-token").await.unwrap();
@@ -535,7 +555,7 @@ mod tests {
     }
 
     #[sqlx::test]
-    async fn authenticated_session_can_access_dashboard(pool: sqlx::MySqlPool) {
+    async fn authenticated_session_can_view_dashboard_with_empty_rooms(pool: sqlx::MySqlPool) {
         crate::services::auth_service::seed_admin_event_if_empty(
             &pool,
             "admin-secret",
@@ -544,23 +564,7 @@ mod tests {
         .await
         .unwrap();
         let app = app_router(pool);
-        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
-        let login_response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/auth/login")
-                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                    .header(header::COOKIE, cookie)
-                    .body(Body::from(format!(
-                        "password=admin-secret&csrf_token={csrf_token}"
-                    )))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let session_cookie = extract_cookie(&login_response);
+        let session_cookie = login_as_admin(app.clone()).await;
 
         let response = app
             .oneshot(
@@ -575,7 +579,111 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        assert_eq!(&body[..], b"ok");
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("個人戦"));
+        assert!(body.contains("QR読み取りのみ"));
+        assert!(body.contains("0 / 15部屋"));
+        assert!(body.contains(r#"href="/admin/rooms""#));
+        assert!(body.contains(r#"href="/admin/settings""#));
+        assert!(body.contains(r#"href="/admin/ranking""#));
+    }
+
+    #[sqlx::test]
+    async fn authenticated_dashboard_shows_room_count(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        crate::repository::room_repository::insert(
+            &pool,
+            event_id,
+            "Library",
+            "Find a book",
+            None,
+            None,
+            None,
+            "qr-dashboard-1",
+        )
+        .await
+        .unwrap();
+        crate::repository::room_repository::insert(
+            &pool,
+            event_id,
+            "Gallery",
+            "Find a painting",
+            None,
+            None,
+            None,
+            "qr-dashboard-2",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool);
+        let session_cookie = login_as_admin(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/dashboard")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("2 / 15部屋"));
+    }
+
+    #[sqlx::test]
+    async fn authenticated_dashboard_shows_team_and_answer_check_modes(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        crate::repository::event_repository::update_settings(&pool, event_id, true, true)
+            .await
+            .unwrap();
+        let app = app_router(pool);
+        let session_cookie = login_as_admin(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/dashboard")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("チーム戦"));
+        assert!(body.contains("QR＋正解入力"));
+        assert!(!body.contains("個人戦"));
+        assert!(!body.contains("QR読み取りのみ"));
     }
 
     #[sqlx::test]

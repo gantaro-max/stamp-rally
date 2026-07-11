@@ -1,0 +1,33 @@
+{% extends "admin/_base.html" %}
+
+{% block title %}ダッシュボード{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4">ダッシュボード</h1>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <h2 class="h5">イベント設定状況</h2>
+    <p>
+      {% if is_team_mode %}チーム戦{% else %}個人戦{% endif %} /
+      {% if require_answer_check %}QR＋正解入力{% else %}QR読み取りのみ{% endif %}
+    </p>
+    <a href="/admin/settings">設定を編集</a>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <h2 class="h5">部屋一覧</h2>
+    <p>登録済み: {{ room_count }} / 15部屋</p>
+    <a href="/admin/rooms">部屋管理へ</a>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <h2 class="h5">ランキング</h2>
+    <a href="/admin/ranking">ランキングを見る</a>
+  </div>
+</div>
+{% endblock %}
