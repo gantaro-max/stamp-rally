@@ -23,7 +23,6 @@ pub struct AppState {
     pub liff_id: Arc<str>,
     pub line_login_channel_id: Arc<str>,
     pub verify_id_tokens: bool,
-    pub pending_registrations: services::game_service::PendingRegistrations,
     pub http_client: reqwest::Client,
     pub send_line_replies: bool,
 }
@@ -45,9 +44,6 @@ impl AppState {
             liff_id: liff_id.into(),
             line_login_channel_id: line_login_channel_id.into(),
             verify_id_tokens: true,
-            pending_registrations: Arc::new(
-                std::sync::Mutex::new(std::collections::HashSet::new()),
-            ),
             http_client: reqwest::Client::new(),
             send_line_replies: true,
         }
