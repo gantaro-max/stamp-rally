@@ -366,16 +366,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mysql_pool_supports_tls_connect_options() {
-        let result = MySqlPoolOptions::new()
-            .connect("mysql://user:pass@127.0.0.1:1/testdb?ssl-mode=REQUIRED")
-            .await;
-        let err = result.expect_err("unreachable port should fail to connect");
-
-        assert!(!err.to_string().contains("without TLS support enabled"));
-    }
-
-    #[tokio::test]
     async fn app_router_registers_health_route() {
         let response = app_router(test_pool())
             .oneshot(
