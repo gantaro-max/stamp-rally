@@ -13,6 +13,9 @@ pub enum ReplyMessage {
         quest_text: String,
         image_url: Option<String>,
     },
+    Cleared {
+        elapsed: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,7 +30,7 @@ pub enum CheckinRejection {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CheckinOutcome {
     NextQuest(ReplyMessage),
-    Cleared,
+    Cleared(ReplyMessage),
     Rejected(CheckinRejection),
 }
 
@@ -222,17 +225,24 @@ pub async fn checkin(
     let room_count = room_repository::count(pool, event.id).await?;
     if visited_count >= room_count {
         player_repository::mark_finished(pool, player.id).await?;
-        return Ok(CheckinOutcome::Cleared);
+        return Ok(CheckinOutcome::Cleared(cleared_reply(&player)));
     }
 
     let Some(next_room) = room_repository::find_random_unvisited(pool, event.id, player.id).await?
     else {
         player_repository::mark_finished(pool, player.id).await?;
-        return Ok(CheckinOutcome::Cleared);
+        return Ok(CheckinOutcome::Cleared(cleared_reply(&player)));
     };
     player_repository::update_current_room(pool, player.id, next_room.id).await?;
     let reply = quest_reply_for_room(pool, public_base_url, &next_room).await?;
     Ok(CheckinOutcome::NextQuest(reply))
+}
+
+fn cleared_reply(player: &player_repository::Player) -> ReplyMessage {
+    let elapsed = crate::services::ranking_service::format_elapsed(
+        chrono::Utc::now().naive_utc() - player.started_at,
+    );
+    ReplyMessage::Cleared { elapsed }
 }
 
 fn help_text() -> String {
@@ -437,7 +447,9 @@ mod tests {
     fn is_elapsed_display(value: &str) -> bool {
         let parts: Vec<_> = value.split(':').collect();
         matches!(parts.len(), 2 | 3)
-            && parts.iter().all(|part| !part.is_empty() && part.chars().all(|char| char.is_ascii_digit()))
+            && parts
+                .iter()
+                .all(|part| !part.is_empty() && part.chars().all(|char| char.is_ascii_digit()))
     }
 
     #[sqlx::test]

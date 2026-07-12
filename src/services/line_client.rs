@@ -83,12 +83,23 @@ pub fn build_quest_flex_message(
 ) -> Value {
     let mut contents = json!({
         "type": "bubble",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "backgroundColor": "#2E7D32",
+            "paddingAll": "12px",
+            "contents": [
+                {"type": "text", "text": "次のクエスト", "color": "#FFFFFF", "size": "sm", "weight": "bold"}
+            ]
+        },
         "body": {
             "type": "box",
             "layout": "vertical",
+            "spacing": "md",
             "contents": [
-                {"type": "text", "text": room_name, "weight": "bold", "wrap": true},
-                {"type": "text", "text": quest_text, "wrap": true}
+                {"type": "text", "text": room_name, "weight": "bold", "size": "xl", "wrap": true},
+                {"type": "separator"},
+                {"type": "text", "text": quest_text, "wrap": true, "size": "md", "color": "#555555"}
             ]
         }
     });
@@ -126,6 +137,35 @@ pub fn build_quest_flex_message(
     })
 }
 
+pub fn build_cleared_flex_message(elapsed: &str) -> Value {
+    json!({
+        "type": "flex",
+        "altText": "全部屋クリアしました！",
+        "contents": {
+            "type": "bubble",
+            "header": {
+                "type": "box",
+                "layout": "vertical",
+                "backgroundColor": "#FFC107",
+                "paddingAll": "16px",
+                "contents": [
+                    {"type": "text", "text": "🎉 クリア！", "color": "#FFFFFF", "weight": "bold", "size": "xl", "align": "center"}
+                ]
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "md",
+                "contents": [
+                    {"type": "text", "text": "全部屋制覇おめでとうございます！", "weight": "bold", "wrap": true},
+                    {"type": "text", "text": format!("クリアタイム: {elapsed}"), "wrap": true},
+                    {"type": "text", "text": "最初の部屋にお戻りください。お疲れ様でした！", "wrap": true, "size": "sm", "color": "#888888"}
+                ]
+            }
+        }
+    })
+}
+
 pub fn to_line_message(reply: &ReplyMessage, liff_id: &str) -> Value {
     match reply {
         ReplyMessage::Text(text) => build_text_message(text),
@@ -134,6 +174,7 @@ pub fn to_line_message(reply: &ReplyMessage, liff_id: &str) -> Value {
             quest_text,
             image_url,
         } => build_quest_flex_message(room_name, quest_text, image_url.as_deref(), liff_id),
+        ReplyMessage::Cleared { elapsed } => build_cleared_flex_message(elapsed),
     }
 }
 
@@ -339,7 +380,11 @@ mod tests {
         let message = super::build_cleared_flex_message("1:23");
 
         assert_eq!(message["type"], "flex");
-        assert!(message["altText"].as_str().is_some_and(|value| !value.is_empty()));
+        assert!(
+            message["altText"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        );
         assert_eq!(message["contents"]["header"]["backgroundColor"], "#FFC107");
         assert_eq!(
             message["contents"]["header"]["contents"][0],

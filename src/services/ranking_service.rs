@@ -80,7 +80,7 @@ pub async fn get_ranking(pool: &MySqlPool, event_id: i32) -> Result<RankingView,
     Ok(build_ranking(players))
 }
 
-fn format_elapsed(duration: TimeDelta) -> String {
+pub(crate) fn format_elapsed(duration: TimeDelta) -> String {
     let total_seconds = duration.num_seconds().max(0);
     let hours = total_seconds / 3600;
     let minutes = (total_seconds % 3600) / 60;
