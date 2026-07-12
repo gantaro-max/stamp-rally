@@ -432,13 +432,14 @@ mod tests {
         }
     }
 
-    fn quest(reply: ReplyMessage) -> (String, String, Option<String>) {
+    fn quest(reply: ReplyMessage) -> (String, String, String, Option<String>) {
         match reply {
             ReplyMessage::Quest {
+                intro,
                 room_name,
                 quest_text,
                 image_url,
-            } => (room_name, quest_text, image_url),
+            } => (intro, room_name, quest_text, image_url),
             ReplyMessage::Text(value) => panic!("expected quest reply: {value}"),
             ReplyMessage::Cleared { elapsed } => panic!("expected quest reply: {elapsed}"),
         }
@@ -483,7 +484,7 @@ mod tests {
         let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-name", "Alice")
             .await
             .unwrap();
-        let (room_name, quest_text, image_url) = quest(reply);
+        let (intro, room_name, quest_text, image_url) = quest(reply);
         let player = crate::repository::player_repository::find_by_line_user_and_event(
             &pool,
             "line-name",
@@ -493,6 +494,7 @@ mod tests {
         .unwrap()
         .unwrap();
 
+        assert_eq!(intro, "最初の部屋は");
         assert_eq!(room_name, "Library");
         assert_eq!(quest_text, "Find the red book");
         assert!(image_url.is_none());
@@ -567,7 +569,9 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert_eq!(quest(reply).0, "Library");
+        let (intro, room_name, _quest_text, _image_url) = quest(reply);
+        assert_eq!(intro, "現在向かっている部屋は");
+        assert_eq!(room_name, "Library");
         assert_eq!(player.current_room_id, Some(room_id));
     }
 
@@ -692,7 +696,9 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert_eq!(quest(reply).0, "Library");
+        let (intro, room_name, _quest_text, _image_url) = quest(reply);
+        assert_eq!(intro, "最初の部屋は");
+        assert_eq!(room_name, "Library");
         assert_eq!(player.player_name, "Alice");
         assert!(!pending_exists(&fresh_pool, "line-restarted", event_id).await);
     }
@@ -915,10 +921,10 @@ mod tests {
         );
         assert_eq!(player.current_room_id, Some(next_room));
         assert!(!player.answer_verified);
-        assert!(matches!(
-            outcome,
-            super::CheckinOutcome::NextQuest(ReplyMessage::Quest { .. })
-        ));
+        let super::CheckinOutcome::NextQuest(ReplyMessage::Quest { intro, .. }) = outcome else {
+            panic!("expected next quest outcome");
+        };
+        assert_eq!(intro, "【Library】クリアおめでとうございます。次の部屋は");
     }
 
     #[sqlx::test]
