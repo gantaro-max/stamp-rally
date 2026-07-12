@@ -318,7 +318,14 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 - クエスト通知には `footer` に「QRを読む」ボタン（`action.type = "uri"`、`uri = "https://liff.line.me/{LIFF_ID}"`）を含める。参加者はこのボタンをタップするだけでLIFFページ（15節）を開ける（従来、案内文で「QRコードを読み込んでください」と伝えるだけで実際に開く導線が無く、実運用で参加者がQRスキャンにたどり着けない欠落があったため追加）。`build_quest_flex_message` は `LIFF_ID` を引数として受け取り、URLを組み立てる
 - クエスト通知の見た目（本番運用フィードバックを受けて装飾を追加）:
   - `header`: 背景色 `#2E7D32`（緑）のboxに、白文字・太字・小サイズで「次のクエスト」ラベルを表示する
-  - `body`: 部屋名を太字・サイズ`xl`で表示し、`separator`を挟んでからクエスト文を`size: md`・グレー系の文字色（`#555555`）で表示する
+  - `body`: 先頭に状況に応じた「つなぎの文」（`size: sm`・グレー系の文字色`#888888`）を表示し、続けて部屋名を太字・サイズ`xl`で表示、`separator`を挟んでからクエスト文を`size: md`・グレー系の文字色（`#555555`）で表示する
+- 「つなぎの文」（`ReplyMessage::Quest`に`intro: String`フィールドを追加し、`game_service`が状況に応じて組み立てる。本番運用フィードバックで「部屋の案内だけでは味気ない・文脈が分かりにくい」との指摘があったため追加）:
+
+  | 状況 | つなぎの文 |
+  |:--|:--|
+  | 参加登録（名前入力）直後、最初の部屋を案内するとき | 最初の部屋は |
+  | QRチェックイン成功後、次の部屋を案内するとき | 【（直前にクリアした部屋名）】クリアおめでとうございます。次の部屋は |
+  | 「開始」再送信時、案内済みの現在の部屋を再送するとき（案内を見失った参加者向けの救済） | 現在向かっている部屋は |
   - `hero`（画像がある場合）・`footer`（QRを読むボタン）は既存の構成を維持する
 - クリア（15節、`CheckinOutcome::Cleared`）時のメッセージも、従来の平文テキストから専用のFlex Messageに変更する:
   - `CheckinOutcome::Cleared` は `ReplyMessage::Cleared { elapsed: String }` を保持するようになる（`NextQuest(ReplyMessage)` と同じ形に揃える）。`elapsed` は `players.finished_at - players.started_at` を `ranking_service::format_elapsed`（既存のランキング画面向け経過時間フォーマット関数。`M:SS` / `H:MM:SS`）で整形した文字列で、`finished_at` はDBの`NOW()`を待たず、`mark_finished` 呼び出し時点のアプリ側時刻（`chrono::Utc::now()`）から計算してよい（クリア演出用の表示にとどまり、ランキング画面自体はDBの`finished_at`をそのまま使うため、数百ミリ秒程度の差異は実害がない）
