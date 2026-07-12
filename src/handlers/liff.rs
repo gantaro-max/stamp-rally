@@ -163,7 +163,10 @@ mod tests {
             "answer_not_verified",
             "先にLINEで正解を送信してから、QRコードを読み込んでください。",
         ),
-        ("room_not_found", "無効なQRコードです。もう一度お試しください。"),
+        (
+            "room_not_found",
+            "無効なQRコードです。もう一度お試しください。",
+        ),
         (
             "invalid_id_token",
             "認証に失敗しました。時間をおいてもう一度お試しください。",
@@ -368,10 +371,15 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         for (reason, message) in REJECTION_MESSAGES {
             assert!(body.contains(reason), "missing reason: {reason}");
-            assert!(body.contains(message), "missing rejection message: {message}");
+            assert!(
+                body.contains(message),
+                "missing rejection message: {message}"
+            );
         }
         assert!(body.contains("reasonMessages[body.reason]"));
-        assert!(body.contains("チェックインできませんでした。LINEチャットの案内を確認してください。"));
+        assert!(
+            body.contains("チェックインできませんでした。LINEチャットの案内を確認してください。")
+        );
     }
 
     #[tokio::test]
