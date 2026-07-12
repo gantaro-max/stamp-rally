@@ -418,6 +418,7 @@ mod tests {
         match reply {
             ReplyMessage::Text(value) => value,
             ReplyMessage::Quest { .. } => panic!("expected text reply"),
+            ReplyMessage::Cleared { elapsed } => panic!("expected text reply: {elapsed}"),
         }
     }
 
@@ -429,7 +430,14 @@ mod tests {
                 image_url,
             } => (room_name, quest_text, image_url),
             ReplyMessage::Text(value) => panic!("expected quest reply: {value}"),
+            ReplyMessage::Cleared { elapsed } => panic!("expected quest reply: {elapsed}"),
         }
+    }
+
+    fn is_elapsed_display(value: &str) -> bool {
+        let parts: Vec<_> = value.split(':').collect();
+        matches!(parts.len(), 2 | 3)
+            && parts.iter().all(|part| !part.is_empty() && part.chars().all(|char| char.is_ascii_digit()))
     }
 
     #[sqlx::test]
@@ -907,6 +915,13 @@ mod tests {
         let only_room = seed_named_room(&pool, event_id, "Library", "qr-last").await;
         let player_id =
             seed_player_current_room(&pool, event_id, "line-checkin-clear", only_room).await;
+        let started_at = chrono::Utc::now().naive_utc() - chrono::TimeDelta::seconds(65);
+        sqlx::query("UPDATE players SET started_at = ? WHERE id = ?")
+            .bind(started_at)
+            .bind(player_id)
+            .execute(&pool)
+            .await
+            .unwrap();
 
         let outcome = super::checkin(&pool, PUBLIC_BASE_URL, "line-checkin-clear", "qr-last")
             .await
@@ -920,7 +935,10 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert!(matches!(outcome, super::CheckinOutcome::Cleared));
+        let super::CheckinOutcome::Cleared(ReplyMessage::Cleared { elapsed }) = outcome else {
+            panic!("expected cleared outcome");
+        };
+        assert!(is_elapsed_display(&elapsed));
         assert_eq!(
             crate::repository::player_repository::count_visited(&pool, player_id)
                 .await
@@ -1046,7 +1064,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(matches!(outcome, super::CheckinOutcome::Cleared));
+        assert!(matches!(outcome, super::CheckinOutcome::Cleared(_)));
         assert_eq!(
             crate::repository::player_repository::count_visited(&pool, player_id)
                 .await

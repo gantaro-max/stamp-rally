@@ -289,13 +289,22 @@ mod tests {
             message["contents"]["hero"]["url"],
             "https://example.test/public/image/image-uuid"
         );
+        assert_eq!(message["contents"]["header"]["backgroundColor"], "#2E7D32");
         assert_eq!(
-            message["contents"]["body"]["contents"][0]["text"],
-            "Library"
+            message["contents"]["header"]["contents"][0],
+            json!({"type": "text", "text": "次のクエスト", "color": "#FFFFFF", "size": "sm", "weight": "bold"})
         );
         assert_eq!(
-            message["contents"]["body"]["contents"][1]["text"],
-            "Find the red book"
+            message["contents"]["body"]["contents"][0],
+            json!({"type": "text", "text": "Library", "weight": "bold", "size": "xl", "wrap": true})
+        );
+        assert_eq!(
+            message["contents"]["body"]["contents"][1],
+            json!({"type": "separator"})
+        );
+        assert_eq!(
+            message["contents"]["body"]["contents"][2],
+            json!({"type": "text", "text": "Find the red book", "wrap": true, "size": "md", "color": "#555555"})
         );
         assert_eq!(
             message["contents"]["footer"]["contents"][0]["action"]["type"],
@@ -322,6 +331,31 @@ mod tests {
         assert_eq!(
             message["contents"]["footer"]["contents"][0]["action"]["uri"],
             "https://liff.line.me/test-liff-id"
+        );
+    }
+
+    #[test]
+    fn build_cleared_flex_message_includes_elapsed_time() {
+        let message = super::build_cleared_flex_message("1:23");
+
+        assert_eq!(message["type"], "flex");
+        assert!(message["altText"].as_str().is_some_and(|value| !value.is_empty()));
+        assert_eq!(message["contents"]["header"]["backgroundColor"], "#FFC107");
+        assert_eq!(
+            message["contents"]["header"]["contents"][0],
+            json!({"type": "text", "text": "🎉 クリア！", "color": "#FFFFFF", "weight": "bold", "size": "xl", "align": "center"})
+        );
+        assert_eq!(
+            message["contents"]["body"]["contents"][0],
+            json!({"type": "text", "text": "全部屋制覇おめでとうございます！", "weight": "bold", "wrap": true})
+        );
+        assert_eq!(
+            message["contents"]["body"]["contents"][1],
+            json!({"type": "text", "text": "クリアタイム: 1:23", "wrap": true})
+        );
+        assert_eq!(
+            message["contents"]["body"]["contents"][2],
+            json!({"type": "text", "text": "最初の部屋にお戻りください。お疲れ様でした！", "wrap": true, "size": "sm", "color": "#888888"})
         );
     }
 
@@ -359,21 +393,26 @@ mod tests {
     }
 
     #[test]
-    fn to_line_message_builds_checkin_push_texts() {
+    fn to_line_message_builds_text_messages() {
         let next = crate::services::game_service::ReplyMessage::Text(
             "次の部屋をLINEで確認してください。".to_string(),
-        );
-        let cleared = crate::services::game_service::ReplyMessage::Text(
-            "クリアしました！最初の部屋に戻ってください。お疲れ様でした！".to_string(),
         );
 
         assert_eq!(
             super::to_line_message(&next, "ignored-liff-id"),
             json!({"type": "text", "text": "次の部屋をLINEで確認してください。"})
         );
+    }
+
+    #[test]
+    fn to_line_message_builds_cleared_flex_message() {
+        let reply = crate::services::game_service::ReplyMessage::Cleared {
+            elapsed: "1:23".to_string(),
+        };
+
         assert_eq!(
-            super::to_line_message(&cleared, "ignored-liff-id"),
-            json!({"type": "text", "text": "クリアしました！最初の部屋に戻ってください。お疲れ様でした！"})
+            super::to_line_message(&reply, "ignored-liff-id"),
+            super::build_cleared_flex_message("1:23")
         );
     }
 }
