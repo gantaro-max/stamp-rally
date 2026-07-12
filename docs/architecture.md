@@ -316,6 +316,15 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 - 返信メッセージは `game_service` が組み立てる中間表現（例: テキスト／クエスト通知の列挙型）を受け取り、`line_client` がLINEのJSONスキーマに変換して送信する。`game_service` はLINE固有のJSON構造や `reqwest` を一切知らない（DBに依存するロジックをネットワーク呼び出しから切り離し、`sqlx::test` で検証できるようにするため）
 - クエスト通知はFlex Message（bubble）を使う。`altText` は必須（プッシュ通知等での代替テキスト）。画像がある部屋は `hero` に `/public/image/{uuid}` の絶対URL（`PUBLIC_BASE_URL` を前置）を設定し、無い部屋は `hero` を省略する
 - クエスト通知には `footer` に「QRを読む」ボタン（`action.type = "uri"`、`uri = "https://liff.line.me/{LIFF_ID}"`）を含める。参加者はこのボタンをタップするだけでLIFFページ（15節）を開ける（従来、案内文で「QRコードを読み込んでください」と伝えるだけで実際に開く導線が無く、実運用で参加者がQRスキャンにたどり着けない欠落があったため追加）。`build_quest_flex_message` は `LIFF_ID` を引数として受け取り、URLを組み立てる
+- クエスト通知の見た目（本番運用フィードバックを受けて装飾を追加）:
+  - `header`: 背景色 `#2E7D32`（緑）のboxに、白文字・太字・小サイズで「次のクエスト」ラベルを表示する
+  - `body`: 部屋名を太字・サイズ`xl`で表示し、`separator`を挟んでからクエスト文を`size: md`・グレー系の文字色（`#555555`）で表示する
+  - `hero`（画像がある場合）・`footer`（QRを読むボタン）は既存の構成を維持する
+- クリア（15節、`CheckinOutcome::Cleared`）時のメッセージも、従来の平文テキストから専用のFlex Messageに変更する:
+  - `CheckinOutcome::Cleared` は `ReplyMessage::Cleared { elapsed: String }` を保持するようになる（`NextQuest(ReplyMessage)` と同じ形に揃える）。`elapsed` は `players.finished_at - players.started_at` を `ranking_service::format_elapsed`（既存のランキング画面向け経過時間フォーマット関数。`M:SS` / `H:MM:SS`）で整形した文字列で、`finished_at` はDBの`NOW()`を待たず、`mark_finished` 呼び出し時点のアプリ側時刻（`chrono::Utc::now()`）から計算してよい（クリア演出用の表示にとどまり、ランキング画面自体はDBの`finished_at`をそのまま使うため、数百ミリ秒程度の差異は実害がない）
+  - `header`: 背景色 `#FFC107`（黄）のboxに、白文字・太字・中央寄せ・サイズ`xl`で「🎉 クリア！」を表示する
+  - `body`: 「全部屋制覇おめでとうございます！」（太字）、「クリアタイム: {elapsed}」、「最初の部屋にお戻りください。お疲れ様でした！」（小サイズ・グレー系）の3行
+  - `ranking_service::format_elapsed` は現状privateな関数だが、`game_service` からも呼べるよう可視性を `pub(crate)` に変更する（`ranking_service`・`game_service`間の重複実装を避けるため）
 - JSON組み立て関数（例: `build_text_message` / `build_quest_flex_message`）は純粋関数として実装し、実際にLINEへ送信する関数（`reqwest`を使う）と分離する。前者のみ自動テストの対象とし、後者（実ネットワーク呼び出し）は `AGENTS.md` の `sqlx::test` DB接続と同様、この開発環境ではテスト対象外とする（ネットワーク到達性が無いため）
 - 送信（`reqwest`呼び出し）が失敗しても、Webhookハンドラーは200を返す（8節）。送信失敗はログに記録するのみで、参加者側の状態（`players`・`visited_rooms`）は既に確定しているため、Webhook自体を失敗扱いにしない。`/liff/checkin` のPush送信失敗も同様に、DB状態は既に確定しているためログ記録のみとし、レスポンス自体は成功として返す
 
@@ -373,6 +382,8 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
   | `answer_not_verified` | 先にLINEで正解を送信してから、QRコードを読み込んでください。 |
   | `room_not_found` | 無効なQRコードです。もう一度お試しください。 |
   | `invalid_id_token` | 認証に失敗しました。時間をおいてもう一度お試しください。 |
+
+- チェックイン結果（成功・クリア・拒否のいずれか）を受け取った後、「LINEチャットに戻る」ボタンを表示する。タップすると LIFF SDK の `liff.closeWindow()` を呼び、LIFFブラウザを閉じてLINEのトーク画面に戻る（本番運用フィードバックで「QR読み込み後の次の操作が分からない」との指摘があったため追加。結果表示前は非表示。「QRを読む」ボタンは結果表示後も残し、再スキャンできるようにする）
 
 ---
 
