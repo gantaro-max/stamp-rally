@@ -1,11 +1,14 @@
 {% extends "admin/_base.html" %}
 {% block title %}部屋管理{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h1 class="h3">部屋管理</h1>
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div class="page-header mb-0">
+    <h1>部屋管理</h1>
+    <p class="page-subtitle">登録済み {{ rooms.len() }} / 15部屋</p>
+  </div>
   <a class="btn btn-primary" href="/admin/rooms/add">新規登録</a>
 </div>
-<table class="table table-striped align-middle">
+<table class="table align-middle">
   <thead><tr><th>部屋名</th><th>QR</th><th>操作</th></tr></thead>
   <tbody>
   {% for room in rooms %}

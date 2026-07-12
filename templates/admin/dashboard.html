@@ -3,31 +3,38 @@
 {% block title %}ダッシュボード{% endblock %}
 
 {% block content %}
-<h1 class="h3 mb-4">ダッシュボード</h1>
-
-<div class="card mb-3">
-  <div class="card-body">
-    <h2 class="h5">イベント設定状況</h2>
-    <p>
-      {% if is_team_mode %}チーム戦{% else %}個人戦{% endif %} /
-      {% if require_answer_check %}QR＋正解入力{% else %}QR読み取りのみ{% endif %}
-    </p>
-    <a href="/admin/settings">設定を編集</a>
-  </div>
+<div class="page-header">
+  <h1>ダッシュボード</h1>
+  <p class="page-subtitle">イベントの設定状況と進捗を確認できます</p>
 </div>
 
-<div class="card mb-3">
-  <div class="card-body">
-    <h2 class="h5">部屋一覧</h2>
-    <p>登録済み: {{ room_count }} / 15部屋</p>
-    <a href="/admin/rooms">部屋管理へ</a>
+<div class="row g-3">
+  <div class="col-12 col-md-4">
+    <div class="stat-card">
+      <div class="stat-label">部屋登録</div>
+      <div class="stat-value">{{ room_count }} / 15</div>
+      <div class="progress mb-2" style="height: 6px;">
+        <div class="progress-bar" role="progressbar" style="width: {{ room_count * 100 / 15 }}%;"></div>
+      </div>
+      <a class="stat-link" href="/admin/rooms">部屋管理へ</a>
+    </div>
   </div>
-</div>
-
-<div class="card mb-3">
-  <div class="card-body">
-    <h2 class="h5">ランキング</h2>
-    <a href="/admin/ranking">ランキングを見る</a>
+  <div class="col-12 col-md-4">
+    <div class="stat-card">
+      <div class="stat-label">イベント設定</div>
+      <div class="mb-3">
+        <span class="badge badge-mode">{% if is_team_mode %}チーム戦{% else %}個人戦{% endif %}</span>
+        <span class="badge badge-mode">{% if require_answer_check %}QR＋正解入力{% else %}QR読み取りのみ{% endif %}</span>
+      </div>
+      <a class="stat-link" href="/admin/settings">設定を編集</a>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="stat-card">
+      <div class="stat-label">ランキング</div>
+      <p class="mb-3">クリアタイムのランキングを確認できます</p>
+      <a class="stat-link" href="/admin/ranking">ランキングを見る</a>
+    </div>
   </div>
 </div>
 {% endblock %}

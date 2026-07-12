@@ -5,9 +5,125 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}管理画面{% endblock %}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --admin-primary: #B54B3A;
+      --admin-primary-hover: #973C2E;
+      --admin-primary-soft: #F3E3DF;
+      --admin-bg: #F4F5F7;
+      --admin-surface: #FFFFFF;
+      --admin-border: #E2E4E9;
+      --admin-text: #1F2328;
+      --admin-text-muted: #6B7280;
+      --admin-success: #2E9E6D;
+      --admin-success-soft: #E1F3EA;
+      --admin-radius-card: 12px;
+      --admin-radius-control: 8px;
+
+      --bs-primary: var(--admin-primary);
+      --bs-primary-rgb: 181, 75, 58;
+      --bs-body-bg: var(--admin-bg);
+      --bs-body-color: var(--admin-text);
+      --bs-border-color: var(--admin-border);
+      --bs-border-radius: var(--admin-radius-control);
+      --bs-border-radius-lg: var(--admin-radius-card);
+      --bs-body-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
+    }
+
+    .btn-primary {
+      background-color: var(--admin-primary);
+      border-color: var(--admin-primary);
+    }
+    .btn-primary:hover,
+    .btn-primary:active {
+      background-color: var(--admin-primary-hover);
+      border-color: var(--admin-primary-hover);
+    }
+    .btn-outline-primary {
+      color: var(--admin-primary);
+      border-color: var(--admin-primary);
+    }
+    .btn-outline-primary:hover {
+      background-color: var(--admin-primary);
+      border-color: var(--admin-primary);
+    }
+
+    .navbar {
+      background-color: var(--admin-surface) !important;
+      border-bottom: 1px solid var(--admin-border);
+    }
+    .navbar-brand {
+      color: var(--admin-primary) !important;
+      font-weight: 700;
+    }
+
+    .page-header {
+      margin-bottom: 1.5rem;
+    }
+    .page-header h1 {
+      font-weight: 700;
+      font-size: 1.5rem;
+      margin-bottom: 0.25rem;
+    }
+    .page-header .page-subtitle {
+      color: var(--admin-text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 0;
+    }
+
+    .card {
+      border-color: var(--admin-border);
+      border-radius: var(--admin-radius-card);
+    }
+
+    .stat-card {
+      background: var(--admin-surface);
+      border: 1px solid var(--admin-border);
+      border-radius: var(--admin-radius-card);
+      padding: 1.25rem 1.5rem;
+      height: 100%;
+    }
+    .stat-card .stat-label {
+      font-size: 0.8rem;
+      color: var(--admin-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      margin-bottom: 0.5rem;
+    }
+    .stat-card .stat-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--admin-text);
+      margin-bottom: 0.5rem;
+    }
+    .stat-card .stat-link {
+      font-size: 0.9rem;
+    }
+
+    .badge-mode {
+      background-color: var(--admin-primary-soft);
+      color: var(--admin-primary-hover);
+      font-weight: 600;
+      padding: 0.35em 0.65em;
+    }
+    .badge-rank-first {
+      background-color: var(--admin-success-soft);
+      color: var(--admin-success);
+      font-weight: 700;
+    }
+
+    table thead th {
+      color: var(--admin-text-muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      border-bottom: 2px solid var(--admin-border);
+      font-weight: 600;
+    }
+  </style>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg bg-body-tertiary mb-4">
+<nav class="navbar navbar-expand-lg mb-4">
   <div class="container">
     <a class="navbar-brand" href="/admin/dashboard">Stamp Rally</a>
     <div class="navbar-nav me-auto">
