@@ -3,7 +3,9 @@
 {% block title %}イベント設定{% endblock %}
 
 {% block content %}
-<h1 class="h3 mb-4">イベント設定</h1>
+<div class="page-header">
+  <h1>イベント設定</h1>
+</div>
 <form method="post" action="/admin/settings">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="form-check mb-3">

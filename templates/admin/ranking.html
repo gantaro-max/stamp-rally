@@ -3,14 +3,16 @@
 {% block title %}ランキング{% endblock %}
 
 {% block content %}
-<h1 class="h3 mb-4">ランキング</h1>
+<div class="page-header">
+  <h1>ランキング</h1>
+</div>
 
 <section class="mb-5">
   <h2 class="h5 mb-3">クリア済み</h2>
   {% if ranking.ranked.is_empty() %}
     <p>クリア済みの参加者はいません</p>
   {% else %}
-    <table class="table table-striped align-middle">
+    <table class="table align-middle">
       <thead>
         <tr>
           <th scope="col">順位</th>
@@ -21,7 +23,13 @@
       <tbody>
         {% for entry in ranking.ranked %}
           <tr>
-            <td>{{ entry.rank }}</td>
+            <td>
+              {% if entry.rank == 1 %}
+                <span class="badge badge-rank-first">{{ entry.rank }}位</span>
+              {% else %}
+                {{ entry.rank }}位
+              {% endif %}
+            </td>
             <td>{{ entry.player_name }}</td>
             <td>{{ entry.elapsed_display }}</td>
           </tr>
