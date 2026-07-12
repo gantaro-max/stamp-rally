@@ -475,3 +475,47 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
   3. **ランキング**: `/admin/ranking`へのリンクを設置する（ダッシュボード側でランキングデータ自体は取得・表示しない。既存の`/admin/ranking`が詳細表示を担う）
 - 他の管理画面同様`admin/_base.html`を継承し、ナビゲーション（部屋管理・設定・ランキング）とログアウトフォームを共有する。ログアウトフォームが要求する`csrf_token`をハンドラーで発行する（他のGET専用管理画面ハンドラー、例: `ranking`と同じパターン）
 - 状態変更を伴わない画面のため、ダッシュボード自体のCSRF保護は不要（共有レイアウトのログアウトフォームのCSRF検証は既存の`/auth/logout`ハンドラー側で行われる）
+
+## 20. 管理画面デザインシステム
+
+本番運用フィードバックで、管理画面（`/admin/*`・`/auth/login`）がBootstrap 5の既定スタイルのままで視認性・ブランドの一貫性に欠けるとの指摘があった。以下の方針で軽量なデザイントークンを導入する。
+
+### 実装方針
+
+- 新規の静的ファイル配信基盤（`/static`ルート等）は追加しない。既存の`admin/_base.html`（各管理画面が継承）と`auth/login.html`（単独ページ）それぞれの`<head>`内に`<style>`ブロックとしてCSSカスタムプロパティ・ユーティリティクラスをインラインで定義する
+- Bootstrap 5.3のCSSカスタムプロパティ（`--bs-primary`・`--bs-body-bg`等）を上書きする形でテーマを適用し、Bootstrapのコンポーネント・グリッド自体は引き続き利用する（独自CSSフレームワークへの置き換えは行わない）
+- 新規Webフォント（Google Fonts等）は追加しない。OSの日本語フォントを優先する`font-family`スタック（`-apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif`）に置き換えるのみとし、外部リクエストを増やさない
+- 対象範囲は管理者向け画面（`/admin/*`・`/auth/login`）のみ。プレイヤー向け`/liff/checkin`は対象外（13節・15節の設計に基づき別途スタイリング済みのため）
+- 新規DBクエリ・新規ルート・新規ハンドラー引数は追加しない。既存のAskamaテンプレート構造体（`DashboardTemplate`等）が受け取るフィールドは変更しない。ダッシュボードの部屋登録進捗（プログレスバー）のような派生値は、テンプレート内の算術式（例: `room_count * 100 / 15`）で完結させ、ハンドラー側に新しいフィールドを追加しない
+
+### カラートークン
+
+| トークン | 値 | 用途 |
+|:--|:--|:--|
+| `--admin-primary` | `#B54B3A` | プライマリボタン・ブランドアクセント（スタンプのインクをイメージした朱色系） |
+| `--admin-primary-hover` | `#973C2E` | プライマリボタンのホバー・アクティブ状態 |
+| `--admin-primary-soft` | `#F3E3DF` | バッジ等の淡いアクセント背景 |
+| `--admin-bg` | `#F4F5F7` | ページ背景 |
+| `--admin-surface` | `#FFFFFF` | カード・ナビゲーションバー背景 |
+| `--admin-border` | `#E2E4E9` | カード・テーブルの罫線 |
+| `--admin-text` | `#1F2328` | 本文・見出しの文字色 |
+| `--admin-text-muted` | `#6B7280` | 補助テキスト（ラベル・サブタイトル） |
+| `--admin-success` | `#2E9E6D` | ランキング1位バッジの文字色 |
+| `--admin-success-soft` | `#E1F3EA` | ランキング1位バッジの背景 |
+| `--admin-radius-card` | `12px` | カードの角丸 |
+| `--admin-radius-control` | `8px` | ボタン・入力欄の角丸 |
+
+外部から取り込んだ`DESIGN.md`（claude.com向けのAnthropicブランドデザイントークン）を参考にする案が出たが、配色（コーラル`#cc785c`）・専用書体（Copernicus/StyreneB）・スパイクマーク等はAnthropic固有のブランド識別要素であり、第三者プロダクトでの流用はブランドの誤認を招くリスクがあるため採用しない。上記トークンはStampRallyBot独自の配色として新規に定義したものであり、`DESIGN.md`の値を転用していない。
+
+### コンポーネント
+
+- **stat-card**: ダッシュボードの集計カード（部屋登録進捗・イベント設定・ランキード導線の3枚）。`--admin-surface`背景・`--admin-radius-card`角丸・1px罫線
+- **badge-mode**: イベント設定状況（個人戦/チーム戦・判定モード）を表すピル状バッジ。`--admin-primary-soft`背景
+- **badge-rank-first**: ランキング1位の行を強調するバッジ。`--admin-success-soft`背景
+- **page-header**: 各画面共通の見出し＋補足テキストのパターン（`<h1>`＋`.page-subtitle`）
+- テーブルヘッダー（`thead th`）は大文字・グレー系の補助テキスト色に統一し、Bootstrap既定の縞模様よりも罫線ベースの落ち着いた表現にする
+
+### 適用範囲外・非対象
+
+- 認証ロジック・CSRF・DBクエリ・ルーティングへの変更はなし（純粋に表示レイヤーの変更）
+- `admin/_base.html`のログアウトフォーム（`action="/auth/logout"`・`csrf_token`）の構造は変更しない（`src/handlers/rooms.rs`の既存テスト`room_templates_include_logout_csrf_token`がこの構造に依存しているため）
