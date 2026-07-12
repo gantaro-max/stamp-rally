@@ -63,6 +63,7 @@
   - `handlers` / `services` / `repository` の初期モジュール構成を追加
 
 ### Fixed
+- LIFFチェックイン失敗時（`/liff/checkin`）のメッセージが、理由（`room_not_found`/`not_registered`/`already_finished`/`wrong_room`/`answer_not_verified`/`invalid_id_token`）によらず単一の汎用文言しか表示されなかった問題を修正。本番運用の動作確認で、特に案内されていない部屋のQRを読んだ場合（`wrong_room`）に原因・次の行動が分からず参加者が混乱するとのフィードバックがあったため、理由ごとにメッセージを出し分けるよう変更（`templates/liff/checkin.html`のクライアント側表示のみの変更、サーバー側の判定ロジックは無変更）（#17）
 - クエスト通知（Flex Message）に「QRコードを読み込んでください」という案内文はあるが、実際にLIFFページ（QRスキャン画面）を開く手段がどこにも無かった不具合を修正。本番デプロイ後の動作確認で発覚した（案内文だけで導線が存在せず、参加者がQRスキャンにたどり着けない状態だった）。クエスト通知のFlex Messageの`footer`に「QRを読む」ボタン（`https://liff.line.me/{LIFF_ID}`を開く`uri`アクション）を追加（#16）
 - `sqlx`依存にTLSバックエンド（`tls-native-tls`）が指定されておらず、TLS必須接続の本番DB（TiDB Serverless）に接続しようとした瞬間に`"SQLx was built without TLS support enabled"`エラーで起動不能になる不具合を修正。Koyeb本番デプロイに向けた疎通確認作業（`sqlx migrate run`）で発覚した。`reqwest`が既に依存している`native-tls`（システムのOpenSSL、本番用`Dockerfile`が`ca-certificates`を含む既存方針）を再利用する形とし、`rustls`系は新たに導入していない（#14）
 - `POST /admin/settings` で、チェックボックス（個人戦/チーム戦・判定モード）にチェックを入れて送信すると、HTMLが送る値`"on"`をAxumの`Form`抽出（bool型）が受け付けられず、常に422でハンドラーに到達できなかった不具合を修正（`"on"`/`"true"`を`true`として扱うカスタムデシリアライザを追加）。事実上、設定画面から各項目をONに切り替える操作が一切機能していなかった（#10）
