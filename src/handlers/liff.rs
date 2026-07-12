@@ -94,11 +94,9 @@ pub async fn checkin(State(state): State<AppState>, Json(body): Json<CheckinRequ
             }
             (StatusCode::OK, Json(json!({"status": "next"}))).into_response()
         }
-        game_service::CheckinOutcome::Cleared => {
+        game_service::CheckinOutcome::Cleared(reply) => {
             if state.send_line_replies {
-                let message = line_client::build_text_message(
-                    "クリアしました！最初の部屋に戻ってください。お疲れ様でした！",
-                );
+                let message = line_client::to_line_message(&reply, &state.liff_id);
                 if let Err(err) = line_client::push_message(
                     &state.http_client,
                     &state.line_channel_access_token,
