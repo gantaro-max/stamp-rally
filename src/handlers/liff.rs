@@ -394,4 +394,18 @@ mod tests {
         assert!(body.contains("body.status === 'cleared'"));
         assert!(body.contains("クリアしました。LINEチャットを確認してください。"));
     }
+
+    #[tokio::test]
+    async fn get_checkin_page_contains_close_window_button() {
+        let app = test_app(test_pool());
+
+        let (status, body) = get_checkin_page_body(app).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("id=\"close-button\""));
+        assert!(body.contains("LINEチャットに戻る"));
+        assert!(body.contains("d-none"));
+        assert!(body.contains("liff.closeWindow()"));
+        assert!(body.contains("closeButton.classList.remove('d-none')"));
+    }
 }
