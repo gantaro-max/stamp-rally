@@ -149,6 +149,29 @@ mod tests {
     use tower::ServiceExt;
 
     const PUBLIC_BASE_URL: &str = "https://example.test";
+    const REJECTION_MESSAGES: &[(&str, &str)] = &[
+        (
+            "wrong_room",
+            "このQRコードはご案内している部屋のものではありません。LINEチャットで案内されている部屋をご確認ください。",
+        ),
+        ("already_finished", "既に全部屋クリア済みです。"),
+        (
+            "not_registered",
+            "参加登録が完了していません。LINEで「開始」と送信してください。",
+        ),
+        (
+            "answer_not_verified",
+            "先にLINEで正解を送信してから、QRコードを読み込んでください。",
+        ),
+        (
+            "room_not_found",
+            "無効なQRコードです。もう一度お試しください。",
+        ),
+        (
+            "invalid_id_token",
+            "認証に失敗しました。時間をおいてもう一度お試しください。",
+        ),
+    ];
 
     async fn seed_event(pool: &sqlx::MySqlPool) -> i32 {
         crate::services::auth_service::seed_admin_event_if_empty(
@@ -215,6 +238,12 @@ mod tests {
             .with_state(state)
     }
 
+    fn test_pool() -> sqlx::MySqlPool {
+        sqlx::mysql::MySqlPoolOptions::new()
+            .connect_lazy("mysql://user:password@localhost/database")
+            .unwrap()
+    }
+
     async fn post_checkin(app: Router, id_token: &str, qr_uuid: &str) -> (StatusCode, Value) {
         let response = app
             .oneshot(
@@ -232,6 +261,21 @@ mod tests {
         let status = response.status();
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         (status, serde_json::from_slice(&body).unwrap())
+    }
+
+    async fn get_checkin_page_body(app: Router) -> (StatusCode, String) {
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/liff/checkin")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, String::from_utf8(body.to_vec()).unwrap())
     }
 
     #[sqlx::test]
@@ -304,27 +348,50 @@ mod tests {
         assert_eq!(body, json!({"status":"rejected","reason":"wrong_room"}));
     }
 
-    #[sqlx::test]
-    async fn get_checkin_page_contains_liff_id(pool: sqlx::MySqlPool) {
-        let app = test_app(pool);
+    #[tokio::test]
+    async fn get_checkin_page_contains_liff_id() {
+        let app = test_app(test_pool());
 
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/liff/checkin")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let (status, body) = get_checkin_page_body(app).await;
 
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert_eq!(status, StatusCode::OK);
         assert!(body.contains("test-liff-id"));
         assert!(body.contains(
             "integrity=\"sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH\""
         ));
         assert!(body.contains("crossorigin=\"anonymous\""));
+    }
+
+    #[tokio::test]
+    async fn get_checkin_page_contains_reason_specific_rejection_messages() {
+        let app = test_app(test_pool());
+
+        let (status, body) = get_checkin_page_body(app).await;
+
+        assert_eq!(status, StatusCode::OK);
+        for (reason, message) in REJECTION_MESSAGES {
+            assert!(body.contains(reason), "missing reason: {reason}");
+            assert!(
+                body.contains(message),
+                "missing rejection message: {message}"
+            );
+        }
+        assert!(body.contains("reasonMessages[body.reason]"));
+        assert!(
+            body.contains("チェックインできませんでした。LINEチャットの案内を確認してください。")
+        );
+    }
+
+    #[tokio::test]
+    async fn get_checkin_page_keeps_success_messages() {
+        let app = test_app(test_pool());
+
+        let (status, body) = get_checkin_page_body(app).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("body.status === 'next'"));
+        assert!(body.contains("チェックインしました。次の案内はLINEチャットを確認してください。"));
+        assert!(body.contains("body.status === 'cleared'"));
+        assert!(body.contains("クリアしました。LINEチャットを確認してください。"));
     }
 }

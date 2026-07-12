@@ -36,7 +36,15 @@
                 } else if (body.status === 'cleared') {
                     message.textContent = 'クリアしました。LINEチャットを確認してください。';
                 } else {
-                    message.textContent = 'チェックインできませんでした。LINEチャットの案内を確認してください。';
+                    const reasonMessages = {
+                        wrong_room: 'このQRコードはご案内している部屋のものではありません。LINEチャットで案内されている部屋をご確認ください。',
+                        already_finished: '既に全部屋クリア済みです。',
+                        not_registered: '参加登録が完了していません。LINEで「開始」と送信してください。',
+                        answer_not_verified: '先にLINEで正解を送信してから、QRコードを読み込んでください。',
+                        room_not_found: '無効なQRコードです。もう一度お試しください。',
+                        invalid_id_token: '認証に失敗しました。時間をおいてもう一度お試しください。'
+                    };
+                    message.textContent = reasonMessages[body.reason] || 'チェックインできませんでした。LINEチャットの案内を確認してください。';
                 }
             } catch (error) {
                 message.textContent = 'QRの読み取りに失敗しました。もう一度お試しください。';
