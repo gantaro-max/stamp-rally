@@ -363,6 +363,16 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 - 認証不要（LIFFのIDトークンによる検証は`POST`側で行う）。LINEアプリ内ブラウザ（またはLIFFの外部ブラウザモード）で開かれる想定
 - LINEのLIFF SDK（`https://static.line-scdn.net/liff/edge/2/sdk.js`）を読み込み、`liff.init({ liffId: LIFF_ID })` の後、「QRを読む」ボタンから `liff.scanCodeV2()` を呼び出す
 - 画面上はチェックイン結果（成功/クリア/エラー理由）を簡潔に表示するのみで、クエストの詳細はLINEチャットを確認するよう促す
+- 失敗時（`status: "rejected"`）は、`reason` の値ごとにメッセージを出し分ける（当初は理由によらず単一の汎用メッセージだったが、特に `wrong_room`（案内されていない部屋のQR）で「なぜ失敗したか」が分からず参加者が混乱したため、本番運用時のフィードバックを受けて出し分けに変更した）
+
+  | `reason` | 表示メッセージ |
+  |:--|:--|
+  | `wrong_room` | このQRコードはご案内している部屋のものではありません。LINEチャットで案内されている部屋をご確認ください。 |
+  | `already_finished` | 既に全部屋クリア済みです。 |
+  | `not_registered` | 参加登録が完了していません。LINEで「開始」と送信してください。 |
+  | `answer_not_verified` | 先にLINEで正解を送信してから、QRコードを読み込んでください。 |
+  | `room_not_found` | 無効なQRコードです。もう一度お試しください。 |
+  | `invalid_id_token` | 認証に失敗しました。時間をおいてもう一度お試しください。 |
 
 ---
 
