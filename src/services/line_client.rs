@@ -76,6 +76,7 @@ pub fn build_text_message(text: &str) -> Value {
 }
 
 pub fn build_quest_flex_message(
+    intro: &str,
     room_name: &str,
     quest_text: &str,
     image_url: Option<&str>,
@@ -97,6 +98,7 @@ pub fn build_quest_flex_message(
             "layout": "vertical",
             "spacing": "md",
             "contents": [
+                {"type": "text", "text": intro, "size": "sm", "color": "#888888", "wrap": true},
                 {"type": "text", "text": room_name, "weight": "bold", "size": "xl", "wrap": true},
                 {"type": "separator"},
                 {"type": "text", "text": quest_text, "wrap": true, "size": "md", "color": "#555555"}
@@ -170,10 +172,11 @@ pub fn to_line_message(reply: &ReplyMessage, liff_id: &str) -> Value {
     match reply {
         ReplyMessage::Text(text) => build_text_message(text),
         ReplyMessage::Quest {
+            intro,
             room_name,
             quest_text,
             image_url,
-        } => build_quest_flex_message(room_name, quest_text, image_url.as_deref(), liff_id),
+        } => build_quest_flex_message(intro, room_name, quest_text, image_url.as_deref(), liff_id),
         ReplyMessage::Cleared { elapsed } => build_cleared_flex_message(elapsed),
     }
 }
@@ -318,6 +321,7 @@ mod tests {
     #[test]
     fn build_quest_flex_message_includes_hero_when_image_url_is_present() {
         let message = super::build_quest_flex_message(
+            "最初の部屋は",
             "Library",
             "Find the red book",
             Some("https://example.test/public/image/image-uuid"),
@@ -337,14 +341,18 @@ mod tests {
         );
         assert_eq!(
             message["contents"]["body"]["contents"][0],
-            json!({"type": "text", "text": "Library", "weight": "bold", "size": "xl", "wrap": true})
+            json!({"type": "text", "text": "最初の部屋は", "size": "sm", "color": "#888888", "wrap": true})
         );
         assert_eq!(
             message["contents"]["body"]["contents"][1],
-            json!({"type": "separator"})
+            json!({"type": "text", "text": "Library", "weight": "bold", "size": "xl", "wrap": true})
         );
         assert_eq!(
             message["contents"]["body"]["contents"][2],
+            json!({"type": "separator"})
+        );
+        assert_eq!(
+            message["contents"]["body"]["contents"][3],
             json!({"type": "text", "text": "Find the red book", "wrap": true, "size": "md", "color": "#555555"})
         );
         assert_eq!(
@@ -363,8 +371,13 @@ mod tests {
 
     #[test]
     fn build_quest_flex_message_omits_hero_when_image_url_is_absent() {
-        let message =
-            super::build_quest_flex_message("Library", "Find the red book", None, "test-liff-id");
+        let message = super::build_quest_flex_message(
+            "最初の部屋は",
+            "Library",
+            "Find the red book",
+            None,
+            "test-liff-id",
+        );
 
         assert_eq!(message["type"], "flex");
         assert!(message["contents"].get("hero").is_none());
@@ -407,6 +420,7 @@ mod tests {
     #[test]
     fn to_line_message_passes_liff_id_to_quest_message() {
         let reply = crate::services::game_service::ReplyMessage::Quest {
+            intro: "現在向かっている部屋は".to_string(),
             room_name: "Library".to_string(),
             quest_text: "Find the red book".to_string(),
             image_url: None,
@@ -415,6 +429,10 @@ mod tests {
         let message = super::to_line_message(&reply, "quest-liff-id");
 
         assert_eq!(message["type"], "flex");
+        assert_eq!(
+            message["contents"]["body"]["contents"][0],
+            json!({"type": "text", "text": "現在向かっている部屋は", "size": "sm", "color": "#888888", "wrap": true})
+        );
         assert_eq!(
             message["contents"]["footer"]["contents"][0]["action"]["uri"],
             "https://liff.line.me/quest-liff-id"
