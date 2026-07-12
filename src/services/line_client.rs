@@ -76,6 +76,7 @@ pub fn build_text_message(text: &str) -> Value {
 }
 
 pub fn build_quest_flex_message(
+    intro: &str,
     room_name: &str,
     quest_text: &str,
     image_url: Option<&str>,
@@ -97,6 +98,7 @@ pub fn build_quest_flex_message(
             "layout": "vertical",
             "spacing": "md",
             "contents": [
+                {"type": "text", "text": intro, "size": "sm", "color": "#888888", "wrap": true},
                 {"type": "text", "text": room_name, "weight": "bold", "size": "xl", "wrap": true},
                 {"type": "separator"},
                 {"type": "text", "text": quest_text, "wrap": true, "size": "md", "color": "#555555"}
@@ -170,10 +172,11 @@ pub fn to_line_message(reply: &ReplyMessage, liff_id: &str) -> Value {
     match reply {
         ReplyMessage::Text(text) => build_text_message(text),
         ReplyMessage::Quest {
+            intro,
             room_name,
             quest_text,
             image_url,
-        } => build_quest_flex_message(room_name, quest_text, image_url.as_deref(), liff_id),
+        } => build_quest_flex_message(intro, room_name, quest_text, image_url.as_deref(), liff_id),
         ReplyMessage::Cleared { elapsed } => build_cleared_flex_message(elapsed),
     }
 }

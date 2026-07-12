@@ -9,6 +9,7 @@ use crate::repository::{
 pub enum ReplyMessage {
     Text(String),
     Quest {
+        intro: String,
         room_name: String,
         quest_text: String,
         image_url: Option<String>,
@@ -130,7 +131,7 @@ pub async fn handle_text_message(
             ));
         };
         player_repository::update_current_room(pool, player_id, room.id).await?;
-        return quest_reply_for_room(pool, public_base_url, &room).await;
+        return quest_reply_for_room(pool, public_base_url, &room, "最初の部屋は").await;
     }
 
     let Some(player) = player else {
@@ -234,7 +235,11 @@ pub async fn checkin(
         return Ok(CheckinOutcome::Cleared(cleared_reply(&player)));
     };
     player_repository::update_current_room(pool, player.id, next_room.id).await?;
-    let reply = quest_reply_for_room(pool, public_base_url, &next_room).await?;
+    let intro = format!(
+        "【{}】クリアおめでとうございます。次の部屋は",
+        room.room_name
+    );
+    let reply = quest_reply_for_room(pool, public_base_url, &next_room, intro).await?;
     Ok(CheckinOutcome::NextQuest(reply))
 }
 
@@ -267,7 +272,7 @@ async fn quest_reply_for_player(
             "現在の部屋が設定されていません。『開始』と送信してください。".to_string(),
         ));
     };
-    quest_reply_for_room(pool, public_base_url, &room).await
+    quest_reply_for_room(pool, public_base_url, &room, "現在向かっている部屋は").await
 }
 
 async fn current_room(
@@ -284,6 +289,7 @@ async fn quest_reply_for_room(
     pool: &MySqlPool,
     public_base_url: &str,
     room: &room_repository::Room,
+    intro: impl Into<String>,
 ) -> Result<ReplyMessage, GameServiceError> {
     let image_url = if let Some(image_id) = room.image_id {
         room_image_repository::find_uuid_by_id(pool, image_id)
@@ -299,6 +305,7 @@ async fn quest_reply_for_room(
     };
 
     Ok(ReplyMessage::Quest {
+        intro: intro.into(),
         room_name: room.room_name.clone(),
         quest_text: room.quest_text.clone(),
         image_url,
