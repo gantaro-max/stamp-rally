@@ -56,6 +56,42 @@ impl std::fmt::Display for GameServiceError {
 
 impl std::error::Error for GameServiceError {}
 
+#[cfg(test)]
+mod timeout_tests {
+    use std::future;
+
+    use super::{GameServiceError, with_db_call_timeout};
+
+    #[tokio::test]
+    async fn db_call_timeout_preserves_completed_results() {
+        let success = with_db_call_timeout(async { Ok::<_, GameServiceError>("completed") })
+            .await
+            .unwrap();
+        assert_eq!(success, "completed");
+
+        let error = with_db_call_timeout(async {
+            Err::<(), _>(GameServiceError::Database(sqlx::Error::RowNotFound))
+        })
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            GameServiceError::Database(sqlx::Error::RowNotFound)
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn db_call_timeout_maps_elapsed_to_timeout_error() {
+        let call = tokio::spawn(with_db_call_timeout(future::pending::<
+            Result<(), GameServiceError>,
+        >()));
+
+        tokio::time::advance(super::DB_CALL_TIMEOUT).await;
+
+        assert!(matches!(call.await.unwrap(), Err(GameServiceError::Timeout)));
+    }
+}
+
 pub async fn handle_text_message(
     pool: &MySqlPool,
     public_base_url: &str,
