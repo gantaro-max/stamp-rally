@@ -49,6 +49,57 @@ where
     }
 }
 
+async fn process_events(state: AppState, events: Vec<WebhookEvent>) {
+    for event in events {
+        if event.event_type != "message" {
+            continue;
+        }
+        let Some(message) = event.message else {
+            continue;
+        };
+        if message.message_type != "text" {
+            continue;
+        }
+        let (Some(reply_token), Some(source), Some(text)) =
+            (event.reply_token, event.source, message.text)
+        else {
+            continue;
+        };
+        let Some(user_id) = source.user_id else {
+            continue;
+        };
+
+        let reply = match game_service::with_db_call_timeout(game_service::handle_text_message(
+            &state.pool,
+            &state.public_base_url,
+            &user_id,
+            &text,
+        ))
+        .await
+        {
+            Ok(reply) => reply,
+            Err(err) => {
+                tracing::error!(?err, "failed to handle LINE text message");
+                continue;
+            }
+        };
+        if !state.send_line_replies {
+            continue;
+        }
+        let message = line_client::to_line_message(&reply, &state.liff_id);
+        if let Err(err) = line_client::send_reply(
+            &state.http_client,
+            &state.line_channel_access_token,
+            &reply_token,
+            message,
+        )
+        .await
+        {
+            tracing::error!(?err, "failed to send LINE reply");
+        }
+    }
+}
+
 pub async fn callback(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -69,58 +120,11 @@ pub async fn callback(
         return StatusCode::OK;
     };
 
-    for event in payload.events {
-        if event.event_type != "message" {
-            continue;
-        }
-        let Some(message) = event.message else {
-            continue;
-        };
-        if message.message_type != "text" {
-            continue;
-        }
-        let (Some(reply_token), Some(source), Some(text)) =
-            (event.reply_token, event.source, message.text)
-        else {
-            continue;
-        };
-        let Some(user_id) = source.user_id else {
-            continue;
-        };
-
-        let task_state = state.clone();
-        dispatch(state.spawn_background_tasks, async move {
-            let reply = match game_service::with_db_call_timeout(game_service::handle_text_message(
-                &task_state.pool,
-                &task_state.public_base_url,
-                &user_id,
-                &text,
-            ))
-            .await
-            {
-                Ok(reply) => reply,
-                Err(err) => {
-                    tracing::error!(?err, "failed to handle LINE text message");
-                    return;
-                }
-            };
-            if !task_state.send_line_replies {
-                return;
-            }
-            let message = line_client::to_line_message(&reply, &task_state.liff_id);
-            if let Err(err) = line_client::send_reply(
-                &task_state.http_client,
-                &task_state.line_channel_access_token,
-                &reply_token,
-                message,
-            )
-            .await
-            {
-                tracing::error!(?err, "failed to send LINE reply");
-            }
-        })
-        .await;
-    }
+    dispatch(
+        state.spawn_background_tasks,
+        process_events(state.clone(), payload.events),
+    )
+    .await;
 
     StatusCode::OK
 }
