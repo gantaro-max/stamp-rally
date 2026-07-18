@@ -38,6 +38,17 @@ struct WebhookMessage {
     text: Option<String>,
 }
 
+async fn dispatch<F>(spawn: bool, future: F)
+where
+    F: std::future::Future<Output = ()> + Send + 'static,
+{
+    if spawn {
+        tokio::spawn(future);
+    } else {
+        future.await;
+    }
+}
+
 pub async fn callback(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -77,34 +88,38 @@ pub async fn callback(
             continue;
         };
 
-        let reply = match game_service::with_db_call_timeout(game_service::handle_text_message(
-            &state.pool,
-            &state.public_base_url,
-            &user_id,
-            &text,
-        ))
-        .await
-        {
-            Ok(reply) => reply,
-            Err(err) => {
-                tracing::error!(?err, "failed to handle LINE text message");
-                continue;
+        let task_state = state.clone();
+        dispatch(state.spawn_background_tasks, async move {
+            let reply = match game_service::with_db_call_timeout(game_service::handle_text_message(
+                &task_state.pool,
+                &task_state.public_base_url,
+                &user_id,
+                &text,
+            ))
+            .await
+            {
+                Ok(reply) => reply,
+                Err(err) => {
+                    tracing::error!(?err, "failed to handle LINE text message");
+                    return;
+                }
+            };
+            if !task_state.send_line_replies {
+                return;
             }
-        };
-        if !state.send_line_replies {
-            continue;
-        }
-        let message = line_client::to_line_message(&reply, &state.liff_id);
-        if let Err(err) = line_client::send_reply(
-            &state.http_client,
-            &state.line_channel_access_token,
-            &reply_token,
-            message,
-        )
-        .await
-        {
-            tracing::error!(?err, "failed to send LINE reply");
-        }
+            let message = line_client::to_line_message(&reply, &task_state.liff_id);
+            if let Err(err) = line_client::send_reply(
+                &task_state.http_client,
+                &task_state.line_channel_access_token,
+                &reply_token,
+                message,
+            )
+            .await
+            {
+                tracing::error!(?err, "failed to send LINE reply");
+            }
+        })
+        .await;
     }
 
     StatusCode::OK
