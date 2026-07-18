@@ -1,3 +1,5 @@
+use std::{future::Future, time::Duration};
+
 use sqlx::MySqlPool;
 
 use crate::repository::{
@@ -38,6 +40,7 @@ pub enum CheckinOutcome {
 #[derive(Debug)]
 pub enum GameServiceError {
     Database(sqlx::Error),
+    Timeout,
 }
 
 impl From<sqlx::Error> for GameServiceError {
@@ -50,11 +53,61 @@ impl std::fmt::Display for GameServiceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Database(err) => write!(f, "database error: {err}"),
+            Self::Timeout => write!(f, "operation timed out"),
         }
     }
 }
 
 impl std::error::Error for GameServiceError {}
+
+pub(crate) const DB_CALL_TIMEOUT: Duration = Duration::from_secs(15);
+
+pub(crate) async fn with_db_call_timeout<T>(
+    operation: impl Future<Output = Result<T, GameServiceError>>,
+) -> Result<T, GameServiceError> {
+    tokio::time::timeout(DB_CALL_TIMEOUT, operation)
+        .await
+        .map_err(|_| GameServiceError::Timeout)?
+}
+
+#[cfg(test)]
+mod timeout_tests {
+    use std::future;
+
+    use super::{GameServiceError, with_db_call_timeout};
+
+    #[tokio::test]
+    async fn db_call_timeout_preserves_completed_results() {
+        let success = with_db_call_timeout(async { Ok::<_, GameServiceError>("completed") })
+            .await
+            .unwrap();
+        assert_eq!(success, "completed");
+
+        let error = with_db_call_timeout(async {
+            Err::<(), _>(GameServiceError::Database(sqlx::Error::RowNotFound))
+        })
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            GameServiceError::Database(sqlx::Error::RowNotFound)
+        ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn db_call_timeout_maps_elapsed_to_timeout_error() {
+        let call = tokio::spawn(with_db_call_timeout(future::pending::<
+            Result<(), GameServiceError>,
+        >()));
+
+        tokio::time::advance(super::DB_CALL_TIMEOUT).await;
+
+        assert!(matches!(
+            call.await.unwrap(),
+            Err(GameServiceError::Timeout)
+        ));
+    }
+}
 
 pub async fn handle_text_message(
     pool: &MySqlPool,
