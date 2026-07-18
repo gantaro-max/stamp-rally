@@ -77,12 +77,12 @@ pub async fn callback(
             continue;
         };
 
-        let reply = match game_service::handle_text_message(
+        let reply = match game_service::with_db_call_timeout(game_service::handle_text_message(
             &state.pool,
             &state.public_base_url,
             &user_id,
             &text,
-        )
+        ))
         .await
         {
             Ok(reply) => reply,

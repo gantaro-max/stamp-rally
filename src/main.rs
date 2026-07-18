@@ -44,7 +44,10 @@ impl AppState {
             liff_id: liff_id.into(),
             line_login_channel_id: line_login_channel_id.into(),
             verify_id_tokens: true,
-            http_client: reqwest::Client::new(),
+            http_client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .expect("failed to build reqwest client"),
             send_line_replies: true,
         }
     }

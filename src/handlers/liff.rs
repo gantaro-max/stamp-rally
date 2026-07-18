@@ -62,12 +62,12 @@ pub async fn checkin(State(state): State<AppState>, Json(body): Json<CheckinRequ
         body.id_token
     };
 
-    let outcome = match game_service::checkin(
+    let outcome = match game_service::with_db_call_timeout(game_service::checkin(
         &state.pool,
         &state.public_base_url,
         &line_user_id,
         &body.qr_uuid,
-    )
+    ))
     .await
     {
         Ok(outcome) => outcome,

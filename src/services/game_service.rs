@@ -1,3 +1,5 @@
+use std::{future::Future, time::Duration};
+
 use sqlx::MySqlPool;
 
 use crate::repository::{
@@ -38,6 +40,7 @@ pub enum CheckinOutcome {
 #[derive(Debug)]
 pub enum GameServiceError {
     Database(sqlx::Error),
+    Timeout,
 }
 
 impl From<sqlx::Error> for GameServiceError {
@@ -50,11 +53,22 @@ impl std::fmt::Display for GameServiceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Database(err) => write!(f, "database error: {err}"),
+            Self::Timeout => write!(f, "operation timed out"),
         }
     }
 }
 
 impl std::error::Error for GameServiceError {}
+
+pub(crate) const DB_CALL_TIMEOUT: Duration = Duration::from_secs(15);
+
+pub(crate) async fn with_db_call_timeout<T>(
+    operation: impl Future<Output = Result<T, GameServiceError>>,
+) -> Result<T, GameServiceError> {
+    tokio::time::timeout(DB_CALL_TIMEOUT, operation)
+        .await
+        .map_err(|_| GameServiceError::Timeout)?
+}
 
 #[cfg(test)]
 mod timeout_tests {
@@ -88,7 +102,10 @@ mod timeout_tests {
 
         tokio::time::advance(super::DB_CALL_TIMEOUT).await;
 
-        assert!(matches!(call.await.unwrap(), Err(GameServiceError::Timeout)));
+        assert!(matches!(
+            call.await.unwrap(),
+            Err(GameServiceError::Timeout)
+        ));
     }
 }
 
