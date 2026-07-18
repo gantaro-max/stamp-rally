@@ -112,6 +112,15 @@ pub async fn callback(
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        future,
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+        time::Duration,
+    };
+
     use axum::{
         Router,
         body::Body,
@@ -127,6 +136,30 @@ mod tests {
         let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(body);
         general_purpose::STANDARD.encode(mac.finalize().into_bytes())
+    }
+
+    #[tokio::test]
+    async fn dispatch_with_spawn_returns_without_waiting_for_future() {
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            super::dispatch(true, future::pending()),
+        )
+        .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn dispatch_without_spawn_waits_for_future() {
+        let completed = Arc::new(AtomicBool::new(false));
+        let completed_in_future = Arc::clone(&completed);
+
+        super::dispatch(false, async move {
+            completed_in_future.store(true, Ordering::SeqCst);
+        })
+        .await;
+
+        assert!(completed.load(Ordering::SeqCst));
     }
 
     #[sqlx::test]
@@ -147,6 +180,7 @@ mod tests {
             "test-login-channel-id",
         );
         state.send_line_replies = false;
+        state.spawn_background_tasks = false;
         let event_id = crate::repository::event_repository::find_singleton(&state.pool)
             .await
             .unwrap()
