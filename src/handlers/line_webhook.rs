@@ -153,6 +153,20 @@ mod tests {
         general_purpose::STANDARD.encode(mac.finalize().into_bytes())
     }
 
+    fn text_event(reply_token: &str, user_id: &str, text: &str) -> super::WebhookEvent {
+        super::WebhookEvent {
+            event_type: "message".to_string(),
+            reply_token: Some(reply_token.to_string()),
+            source: Some(super::WebhookSource {
+                user_id: Some(user_id.to_string()),
+            }),
+            message: Some(super::WebhookMessage {
+                message_type: "text".to_string(),
+                text: Some(text.to_string()),
+            }),
+        }
+    }
+
     #[tokio::test]
     async fn dispatch_with_spawn_returns_without_waiting_for_future() {
         let result = tokio::time::timeout(
@@ -175,6 +189,64 @@ mod tests {
         .await;
 
         assert!(completed.load(Ordering::SeqCst));
+    }
+
+    #[sqlx::test]
+    async fn process_events_handles_same_user_messages_in_payload_order(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let room_id = crate::repository::room_repository::insert(
+            &pool,
+            event_id,
+            "Room A",
+            "Quest A",
+            None,
+            None,
+            None,
+            "qr-room-a",
+        )
+        .await
+        .unwrap();
+        let mut state = crate::AppState::new(
+            pool,
+            "test-channel-secret",
+            "test-channel-access-token",
+            "https://example.test",
+            "test-liff-id",
+            "test-login-channel-id",
+        );
+        state.send_line_replies = false;
+        let pool = state.pool.clone();
+
+        super::process_events(
+            state,
+            vec![
+                text_event("reply-start", "line-sequential", "開始"),
+                text_event("reply-name", "line-sequential", "Alice"),
+            ],
+        )
+        .await;
+
+        let player = crate::repository::player_repository::find_by_line_user_and_event(
+            &pool,
+            "line-sequential",
+            event_id,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(player.player_name, "Alice");
+        assert_eq!(player.current_room_id, Some(room_id));
     }
 
     #[sqlx::test]
