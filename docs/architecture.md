@@ -519,3 +519,24 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
 
 - 認証ロジック・CSRF・DBクエリ・ルーティングへの変更はなし（純粋に表示レイヤーの変更）
 - `admin/_base.html`のログアウトフォーム（`action="/auth/logout"`・`csrf_token`）の構造は変更しない（`src/handlers/rooms.rs`の既存テスト`room_templates_include_logout_csrf_token`がこの構造に依存しているため）
+
+## 21. DB接続・外部API呼び出しのタイムアウト
+
+本番運用中、参加者が「開始」→チーム名入力（`pending_registrations`からの`players`行作成・部屋割当を含む一連のDBアクセス、10節参照）を行った際にBotが無反応になる障害が発生した。調査の結果、以下が判明した。
+
+- `MySqlPoolOptions::new().connect(...)`（`main.rs`）にタイムアウト関連のオプションを一切設定していない
+- `reqwest::Client::new()`（`AppState::new`内）にもリクエスト全体のタイムアウトを設定していない
+- sqlxの`test_before_acquire`（既定で有効）はコネクション取得前にpingを行うが、pingも同じ非同期の読み取りに依存するため、コネクションが「エラーを返さず応答も返ってこない」状態（TiDB Serverless側がTCP接続を無応答のまま内部的に破棄した場合など）になっていると、ping自体も無期限にハングしうる。したがって`idle_timeout`・`max_lifetime`のチューニングだけでは、この種のハングを確実には防げない
+
+この状態だと、Webhook（`/callback`）・LIFFチェックイン（`/liff/checkin`）いずれの処理でも、DBアクセスやLINE API呼び出しがハングした場合、そのリクエスト処理タスクが完了せず、参加者への応答が返らないままエラーログすら残らない（8節・13節の「エラーはログに記録し処理を継続する」という既存方針は、処理が“エラーで終わる”ことを前提としており、“ハングして終わらない”ケースをカバーできていなかった）。加えて、ハングしたリクエストが確保したDBコネクションを返却しないまま滞留すると、コネクションプールの上限（既定10）に達し、後続の別参加者のリクエストもコネクション取得待ちでハングする、事実上の全面停止に発展しうる。
+
+### 対策方針
+
+1. **`reqwest::Client`にリクエスト全体のタイムアウトを設定する**（`.timeout(std::time::Duration::from_secs(10))`）。LINEの各API呼び出し（reply / push / IDトークン検証）はいずれも通常数百ms程度で完了するため、10秒は十分に余裕を持った上限とする
+2. **Webhook（`/callback`）・LIFFチェックイン（`/liff/checkin`）それぞれのハンドラーで、DBアクセスを伴う本体処理（`game_service::handle_text_message` / `game_service::checkin`）全体を`tokio::time::timeout(std::time::Duration::from_secs(15), ...)`でラップする**
+   - タイムアウトした場合は、既存のエラー処理経路と同じ扱いにする：`/callback`はログに記録した上で当該イベントの処理を打ち切り、他のイベント処理は継続し、レスポンス自体は200を返す（8節の方針を維持）。`/liff/checkin`はログに記録した上で500を返す（既存の`GameServiceError`のハンドリング、`handlers/liff.rs`と同じ扱い）
+   - タイムアウトは新設の`game_service::GameServiceError::Timeout`として扱い、既存の`Database`バリアントと同様に`tracing::error!`でログに記録する
+   - futureがタイムアウトでdropされることで、そのfutureが保持していたDBコネクションガードも解放される（プールに滞留し続けることを防ぐ）
+3. 上記のいずれも、1件のリクエスト処理の失敗が他の参加者の処理に波及しない、という既存方針（8節・13節）を崩さない。上記のタイムアウト値（10秒・15秒）は初期の見積もりであり、本番の実測レイテンシに応じて今後調整してよい
+
+---

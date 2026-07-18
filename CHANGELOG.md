@@ -71,6 +71,10 @@
   - `handlers` / `services` / `repository` の初期モジュール構成を追加
 
 ### Fixed
+- 本番DB（TiDB Serverless）・LINE Messaging APIへの呼び出しにタイムアウトが設定されておらず、コネクションが応答不能になった場合、リクエスト処理が無期限にハングして参加者への応答が返らなくなる不具合を修正。本番運用前の動作確認で、参加者が「開始」→チーム名入力後に無反応になる事象が発生し発覚した（#22）
+  - `reqwest::Client`にリクエスト全体のタイムアウト（10秒）を設定
+  - `/callback`（LINE Webhook）・`/liff/checkin`双方で、DBアクセスを伴う本体処理（`game_service::handle_text_message` / `game_service::checkin`）を`game_service::with_db_call_timeout`（`tokio::time::timeout`、15秒）でラップし、`GameServiceError::Timeout`として既存のエラーログ・エラー処理経路に統合
+  - 個別のリクエストが無期限にハングしてDBコネクションプールを占有し続け、他の参加者の処理にも波及する事態を防ぐ。設計は[docs/architecture.md 21節「DB接続・外部API呼び出しのタイムアウト」](docs/architecture.md#21-db接続外部api呼び出しのタイムアウト)を参照
 - LIFFチェックイン失敗時（`/liff/checkin`）のメッセージが、理由（`room_not_found`/`not_registered`/`already_finished`/`wrong_room`/`answer_not_verified`/`invalid_id_token`）によらず単一の汎用文言しか表示されなかった問題を修正。本番運用の動作確認で、特に案内されていない部屋のQRを読んだ場合（`wrong_room`）に原因・次の行動が分からず参加者が混乱するとのフィードバックがあったため、理由ごとにメッセージを出し分けるよう変更（`templates/liff/checkin.html`のクライアント側表示のみの変更、サーバー側の判定ロジックは無変更）（#17）
 - クエスト通知（Flex Message）に「QRコードを読み込んでください」という案内文はあるが、実際にLIFFページ（QRスキャン画面）を開く手段がどこにも無かった不具合を修正。本番デプロイ後の動作確認で発覚した（案内文だけで導線が存在せず、参加者がQRスキャンにたどり着けない状態だった）。クエスト通知のFlex Messageの`footer`に「QRを読む」ボタン（`https://liff.line.me/{LIFF_ID}`を開く`uri`アクション）を追加（#16）
 - `sqlx`依存にTLSバックエンド（`tls-native-tls`）が指定されておらず、TLS必須接続の本番DB（TiDB Serverless）に接続しようとした瞬間に`"SQLx was built without TLS support enabled"`エラーで起動不能になる不具合を修正。Koyeb本番デプロイに向けた疎通確認作業（`sqlx migrate run`）で発覚した。`reqwest`が既に依存している`native-tls`（システムのOpenSSL、本番用`Dockerfile`が`ca-certificates`を含む既存方針）を再利用する形とし、`rustls`系は新たに導入していない（#14）
