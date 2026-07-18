@@ -25,6 +25,7 @@ pub struct AppState {
     pub verify_id_tokens: bool,
     pub http_client: reqwest::Client,
     pub send_line_replies: bool,
+    pub spawn_background_tasks: bool,
 }
 
 impl AppState {
@@ -49,6 +50,7 @@ impl AppState {
                 .build()
                 .expect("failed to build reqwest client"),
             send_line_replies: true,
+            spawn_background_tasks: true,
         }
     }
 }
