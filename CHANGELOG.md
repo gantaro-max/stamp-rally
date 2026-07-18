@@ -71,6 +71,10 @@
   - `handlers` / `services` / `repository` の初期モジュール構成を追加
 
 ### Fixed
+- #22の対策（DB/外部API呼び出しへのタイムアウト追加）をデプロイした後も、参加者への応答が返らない事象が再発した問題を修正。LINE Developers Consoleの「Webhookエラー統計」で`request_timeout`（LINEプラットフォーム自身がWebhookレスポンスを待ちきれずタイムアウトした）を確認し、`/callback`が署名検証→DBアクセス→LINE返信送信→200返却を同期的に行っているため、#22で追加した15秒のタイムアウトが発動する前にLINE側が先に配信失敗と判断してしまうことが原因と判明した（#23）
+  - `/callback`は署名検証・JSONパースが完了した時点で即座に200を返し、イベントごとの実処理（DBアクセス・LINE返信送信）は`tokio::spawn`によるバックグラウンドタスクに切り離した。これによりレスポンス時間が署名検証・JSONパースのみに依存するようになり、DB・LINE API呼び出しがどれだけ遅延してもLINE側のタイムアウトに引っかからなくなる
+  - 同一Webhookペイロードに複数イベントが含まれる場合に備え、ペイロード全体を1つのバックグラウンドタスクにまとめて処理する（`process_events`関数）。イベントごとに個別にタスクを起動すると、同一参加者からの連続した操作（例:「リセット」の直後に「開始」）が並行実行され送信順序を保てなくなるため、最終レビューで発見・修正した
+  - `/liff/checkin`は呼び出し元がLIFFページのブラウザでありLINEプラットフォームのような固定タイムアウトを持たないため対象外。#22のタイムアウト値（10秒・15秒）も変更なし。設計は[docs/architecture.md 8節](docs/architecture.md#8-line-webhookcallbackの受信と署名検証)・[21節の追記](docs/architecture.md#追記-callbackはさらにレスポンスの即時返却が必要だった)を参照
 - 本番DB（TiDB Serverless）・LINE Messaging APIへの呼び出しにタイムアウトが設定されておらず、コネクションが応答不能になった場合、リクエスト処理が無期限にハングして参加者への応答が返らなくなる不具合を修正。本番運用前の動作確認で、参加者が「開始」→チーム名入力後に無反応になる事象が発生し発覚した（#22）
   - `reqwest::Client`にリクエスト全体のタイムアウト（10秒）を設定
   - `/callback`（LINE Webhook）・`/liff/checkin`双方で、DBアクセスを伴う本体処理（`game_service::handle_text_message` / `game_service::checkin`）を`game_service::with_db_call_timeout`（`tokio::time::timeout`、15秒）でラップし、`GameServiceError::Timeout`として既存のエラーログ・エラー処理経路に統合
