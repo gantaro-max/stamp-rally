@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- 部屋ごとのカスタムスタンプ画像・スタンプカード台紙画像を、実際のスタンプカード画像（`stamp_card_service::render_png`）に反映（#28）
+  - `render_png`のシグネチャを`StampCell { label, custom_image }`の配列＋`card_background: Option<&DynamicImage>`を受け取る形に変更。部屋に`stamp_image_id`が設定されていればその画像を直径84pxの円形にクロップして表示（回転演出は適用しない）、未設定ならこれまで通りラベルを使ったはんこ風自動生成。`stamp_card_background_image_id`が設定されていればカード全体の背景として敷く
+  - `room_repository::find_visited_room_names_ordered`が`stamp_label`・`stamp_image_id`も返すよう拡張（訪問順は変更なし）。`room_image_repository::find_by_id`（内部ID指定での画像取得）を新設
+  - 部屋のスタンプ画像・カード台紙画像は`AppState.stamp_image_cache`（`room_images.id`をキーにしたプロセス内メモリキャッシュ、`std::sync::RwLock`）でデコード結果を再利用し、未認証・高頻度アクセスの`GET /public/stamp-card/{token}`が毎回LONGBLOB取得・デコードを行わないようにした。同エンドポイントのDBアクセスは引き続き`game_service::with_db_call_timeout`でラップ（トークン検索・訪問済み部屋取得・部屋数取得・イベント取得の4クエリ）
+  - #27で先送りしていた「DBスキーマ・管理画面のみで描画未反映」の状態を解消。設計は[docs/architecture.md 23節「追記: 部屋ごとのカスタムスタンプ画像・カード台紙画像への対応（PR B）」](docs/architecture.md#追記-部屋ごとのカスタムスタンプ画像カード台紙画像への対応pr-b)を参照
 - 部屋ごとのスタンプ表示名・スタンプ画像、スタンプカード台紙画像の管理画面設定を追加（#27）
   - 部屋の登録・編集フォームに「スタンプ表示名」（必須・最大4文字。部屋名とは別に、スタンプカード上で読みやすい短い文字列を設定する）と「スタンプ画像」（任意）の入力欄を追加。イベント設定画面（`/admin/settings`）にはスタンプカード全体の台紙用画像（任意）のアップロード欄を追加し、フォームを`multipart/form-data`化した
   - 新規カラム`rooms.stamp_label`（VARCHAR(4), NULL可）・`rooms.stamp_image_id`・`events.stamp_card_background_image_id`（いずれも既存の`room_images`を参照するFK、`ON DELETE SET NULL`）。画像は既存の部屋画像と同じ検証・保存フロー（`image_service::process_upload`によるマジックバイト検証・リサイズ、新規挿入→参照の張り替え→旧画像削除の順序）を再利用
