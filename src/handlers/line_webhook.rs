@@ -86,12 +86,12 @@ async fn process_events(state: AppState, events: Vec<WebhookEvent>) {
         if !state.send_line_replies {
             continue;
         }
-        let message = line_client::to_line_message(&reply, &state.liff_id);
+        let messages = line_client::to_line_messages(&reply, &state.liff_id);
         if let Err(err) = line_client::send_reply(
             &state.http_client,
             &state.line_channel_access_token,
             &reply_token,
-            message,
+            messages,
         )
         .await
         {

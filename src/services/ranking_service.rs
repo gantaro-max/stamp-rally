@@ -113,6 +113,7 @@ mod tests {
             answer_verified: false,
             started_at: at(started_at),
             finished_at: finished_at.map(at),
+            stamp_card_token: format!("stamp-token-{id}"),
         }
     }
 
@@ -228,6 +229,7 @@ mod tests {
             "line-finished-ranking",
             event_id,
             "Alice",
+            "stamp-token-line-finished-ranking",
         )
         .await
         .unwrap();
@@ -243,6 +245,7 @@ mod tests {
             "line-unfinished-ranking",
             event_id,
             "Bob",
+            "stamp-token-line-unfinished-ranking",
         )
         .await
         .unwrap();

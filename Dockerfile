@@ -5,6 +5,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY templates ./templates
+COPY assets ./assets
 
 RUN cargo build --release --locked
 

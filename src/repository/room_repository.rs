@@ -172,6 +172,26 @@ pub async fn find_by_qr_uuid(pool: &MySqlPool, qr_uuid: &str) -> Result<Option<R
     }))
 }
 
+pub async fn find_visited_room_names_ordered(
+    pool: &MySqlPool,
+    player_id: i32,
+) -> Result<Vec<String>, sqlx::Error> {
+    let rows = sqlx::query(
+        r#"
+        SELECT rooms.room_name AS room_name
+        FROM visited_rooms
+        JOIN rooms ON rooms.id = visited_rooms.room_id
+        WHERE visited_rooms.player_id = ?
+        ORDER BY visited_rooms.visited_at ASC
+        "#,
+    )
+    .bind(player_id)
+    .fetch_all(pool)
+    .await?;
+
+    rows.iter().map(|row| row.try_get("room_name")).collect()
+}
+
 pub async fn find_random_unvisited(
     pool: &MySqlPool,
     event_id: i32,
@@ -348,6 +368,69 @@ mod tests {
         .await
         .unwrap();
         result.last_insert_id() as i32
+    }
+
+    #[sqlx::test]
+    async fn find_visited_room_names_ordered_returns_visit_order(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let player_id = seed_player(&pool, event_id).await;
+        let room_a = super::insert(
+            &pool,
+            event_id,
+            "1部屋目",
+            "Quest",
+            None,
+            None,
+            None,
+            "qr-visited-order-1",
+        )
+        .await
+        .unwrap();
+        let room_b = super::insert(
+            &pool,
+            event_id,
+            "2部屋目",
+            "Quest",
+            None,
+            None,
+            None,
+            "qr-visited-order-2",
+        )
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO visited_rooms (player_id, room_id, visited_at) VALUES (?, ?, ?), (?, ?, ?)",
+        )
+        .bind(player_id)
+        .bind(room_b)
+        .bind("2026-01-01 10:00:00")
+        .bind(player_id)
+        .bind(room_a)
+        .bind("2026-01-01 10:05:00")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let room_names = super::find_visited_room_names_ordered(&pool, player_id)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            room_names,
+            vec!["2部屋目".to_string(), "1部屋目".to_string()]
+        );
+    }
+
+    #[sqlx::test]
+    async fn find_visited_room_names_ordered_returns_empty_for_no_visits(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let player_id = seed_player(&pool, event_id).await;
+
+        let room_names = super::find_visited_room_names_ordered(&pool, player_id)
+            .await
+            .unwrap();
+
+        assert!(room_names.is_empty());
     }
 
     #[sqlx::test]

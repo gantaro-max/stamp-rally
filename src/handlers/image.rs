@@ -18,6 +18,47 @@ pub async fn serve(State(pool): State<MySqlPool>, Path(uuid): Path<String>) -> i
     }
 }
 
+pub async fn stamp_card(
+    State(pool): State<MySqlPool>,
+    Path(token): Path<String>,
+) -> impl IntoResponse {
+    use crate::repository::{player_repository, room_repository};
+    use crate::services::game_service::{self, GameServiceError};
+
+    let result: Result<Option<(Vec<String>, i64)>, GameServiceError> =
+        game_service::with_db_call_timeout(async {
+            let Some(player) = player_repository::find_by_stamp_card_token(&pool, &token).await?
+            else {
+                return Ok(None);
+            };
+            let room_names =
+                room_repository::find_visited_room_names_ordered(&pool, player.id).await?;
+            let total_rooms = room_repository::count(&pool, player.event_id).await?;
+            Ok(Some((room_names, total_rooms)))
+        })
+        .await;
+
+    let (room_names, total_rooms) = match result {
+        Ok(Some(data)) => data,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(err) => {
+            tracing::error!(?err, "failed to load stamp card data");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let png = crate::services::stamp_card_service::render_png(&room_names, total_rooms);
+
+    (
+        [
+            (header::CONTENT_TYPE, "image/png".to_string()),
+            (header::CACHE_CONTROL, "private, max-age=60".to_string()),
+        ],
+        png,
+    )
+        .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use axum::{
@@ -60,6 +101,90 @@ mod tests {
         );
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         assert_eq!(&body[..], data);
+    }
+
+    async fn seed_event(pool: &sqlx::MySqlPool) -> i32 {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        crate::repository::event_repository::find_singleton(pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id
+    }
+
+    #[sqlx::test]
+    async fn public_stamp_card_returns_png_for_valid_token(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let room_id = crate::repository::room_repository::insert(
+            &pool,
+            event_id,
+            "Library",
+            "Quest",
+            None,
+            None,
+            None,
+            "qr-stamp-handler",
+        )
+        .await
+        .unwrap();
+        let player_id = crate::repository::player_repository::insert(
+            &pool,
+            "line-stamp-handler",
+            event_id,
+            "Alice",
+            "stamp-token-handler",
+        )
+        .await
+        .unwrap();
+        crate::repository::player_repository::insert_visited_room(&pool, player_id, room_id)
+            .await
+            .unwrap();
+        let app = Router::new()
+            .route("/public/stamp-card/{token}", get(super::stamp_card))
+            .with_state(pool);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/public/stamp-card/stamp-token-handler")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "image/png"
+        );
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(image::guess_format(&body).unwrap(), image::ImageFormat::Png);
+    }
+
+    #[sqlx::test]
+    async fn public_stamp_card_returns_not_found_for_missing_token(pool: sqlx::MySqlPool) {
+        let app = Router::new()
+            .route("/public/stamp-card/{token}", get(super::stamp_card))
+            .with_state(pool);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/public/stamp-card/missing-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[sqlx::test]
