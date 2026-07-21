@@ -18,6 +18,47 @@ pub async fn serve(State(pool): State<MySqlPool>, Path(uuid): Path<String>) -> i
     }
 }
 
+pub async fn stamp_card(
+    State(pool): State<MySqlPool>,
+    Path(token): Path<String>,
+) -> impl IntoResponse {
+    use crate::repository::{player_repository, room_repository};
+    use crate::services::game_service::{self, GameServiceError};
+
+    let result: Result<Option<(Vec<String>, i64)>, GameServiceError> =
+        game_service::with_db_call_timeout(async {
+            let Some(player) = player_repository::find_by_stamp_card_token(&pool, &token).await?
+            else {
+                return Ok(None);
+            };
+            let room_names =
+                room_repository::find_visited_room_names_ordered(&pool, player.id).await?;
+            let total_rooms = room_repository::count(&pool, player.event_id).await?;
+            Ok(Some((room_names, total_rooms)))
+        })
+        .await;
+
+    let (room_names, total_rooms) = match result {
+        Ok(Some(data)) => data,
+        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+        Err(err) => {
+            tracing::error!(?err, "failed to load stamp card data");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let png = crate::services::stamp_card_service::render_png(&room_names, total_rooms);
+
+    (
+        [
+            (header::CONTENT_TYPE, "image/png".to_string()),
+            (header::CACHE_CONTROL, "private, max-age=60".to_string()),
+        ],
+        png,
+    )
+        .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use axum::{

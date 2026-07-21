@@ -12,6 +12,7 @@ pub struct Player {
     pub answer_verified: bool,
     pub started_at: NaiveDateTime,
     pub finished_at: Option<NaiveDateTime>,
+    pub stamp_card_token: String,
 }
 
 fn player_from_row(row: sqlx::mysql::MySqlRow) -> Result<Player, sqlx::Error> {
@@ -24,6 +25,7 @@ fn player_from_row(row: sqlx::mysql::MySqlRow) -> Result<Player, sqlx::Error> {
         answer_verified: row.try_get::<i8, _>("answer_verified")? != 0,
         started_at: row.try_get("started_at")?,
         finished_at: row.try_get("finished_at")?,
+        stamp_card_token: row.try_get("stamp_card_token")?,
     })
 }
 
@@ -34,7 +36,7 @@ pub async fn find_by_line_user_and_event(
 ) -> Result<Option<Player>, sqlx::Error> {
     let Some(row) = sqlx::query(
         r#"
-        SELECT id, line_user_id, event_id, player_name, current_room_id, answer_verified, started_at, finished_at
+        SELECT id, line_user_id, event_id, player_name, current_room_id, answer_verified, started_at, finished_at, stamp_card_token
         FROM players
         WHERE line_user_id = ? AND event_id = ?
         "#,
@@ -56,7 +58,7 @@ pub async fn find_all_by_event(
 ) -> Result<Vec<Player>, sqlx::Error> {
     let rows = sqlx::query(
         r#"
-        SELECT id, line_user_id, event_id, player_name, current_room_id, answer_verified, started_at, finished_at
+        SELECT id, line_user_id, event_id, player_name, current_room_id, answer_verified, started_at, finished_at, stamp_card_token
         FROM players
         WHERE event_id = ?
         "#,
@@ -73,20 +75,43 @@ pub async fn insert(
     line_user_id: &str,
     event_id: i32,
     player_name: &str,
+    stamp_card_token: &str,
 ) -> Result<i32, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        INSERT INTO players (line_user_id, event_id, player_name, current_room_id, answer_verified, started_at, finished_at)
-        VALUES (?, ?, ?, NULL, FALSE, NOW(), NULL)
+        INSERT INTO players (line_user_id, event_id, player_name, current_room_id, answer_verified, started_at, finished_at, stamp_card_token)
+        VALUES (?, ?, ?, NULL, FALSE, NOW(), NULL, ?)
         "#,
     )
     .bind(line_user_id)
     .bind(event_id)
     .bind(player_name)
+    .bind(stamp_card_token)
     .execute(pool)
     .await?;
 
     Ok(result.last_insert_id() as i32)
+}
+
+pub async fn find_by_stamp_card_token(
+    pool: &MySqlPool,
+    stamp_card_token: &str,
+) -> Result<Option<Player>, sqlx::Error> {
+    let Some(row) = sqlx::query(
+        r#"
+        SELECT id, line_user_id, event_id, player_name, current_room_id, answer_verified, started_at, finished_at, stamp_card_token
+        FROM players
+        WHERE stamp_card_token = ?
+        "#,
+    )
+    .bind(stamp_card_token)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(player_from_row(row)?))
 }
 
 pub async fn update_current_room(
@@ -199,7 +224,7 @@ mod tests {
     async fn inserts_and_finds_player_by_line_user_and_event(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
 
-        let player_id = super::insert(&pool, "line-user-1", event_id, "Alice")
+        let player_id = super::insert(&pool, "line-user-1", event_id, "Alice", "token-line-user-1")
             .await
             .unwrap();
         let player = super::find_by_line_user_and_event(&pool, "line-user-1", event_id)
@@ -255,7 +280,7 @@ mod tests {
     async fn update_current_room_sets_room_and_resets_answer_verified(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
         let room_id = seed_room(&pool, event_id).await;
-        let player_id = super::insert(&pool, "line-user-2", event_id, "Alice")
+        let player_id = super::insert(&pool, "line-user-2", event_id, "Alice", "token-line-user-2")
             .await
             .unwrap();
         super::set_answer_verified(&pool, player_id, true)
@@ -277,7 +302,7 @@ mod tests {
     #[sqlx::test]
     async fn set_answer_verified_updates_flag(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
-        let player_id = super::insert(&pool, "line-user-3", event_id, "Alice")
+        let player_id = super::insert(&pool, "line-user-3", event_id, "Alice", "token-line-user-3")
             .await
             .unwrap();
 
@@ -295,7 +320,7 @@ mod tests {
     #[sqlx::test]
     async fn delete_by_line_user_and_event_deletes_player(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
-        super::insert(&pool, "line-user-4", event_id, "Alice")
+        super::insert(&pool, "line-user-4", event_id, "Alice", "token-line-user-4")
             .await
             .unwrap();
 
@@ -315,7 +340,7 @@ mod tests {
     async fn delete_by_line_user_and_event_cascades_visited_rooms(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
         let room_id = seed_room(&pool, event_id).await;
-        let player_id = super::insert(&pool, "line-user-5", event_id, "Alice")
+        let player_id = super::insert(&pool, "line-user-5", event_id, "Alice", "token-line-user-5")
             .await
             .unwrap();
         sqlx::query(
@@ -356,9 +381,15 @@ mod tests {
         )
         .await
         .unwrap();
-        let player_id = super::insert(&pool, "line-visited", event_id, "Alice")
-            .await
-            .unwrap();
+        let player_id = super::insert(
+            &pool,
+            "line-visited",
+            event_id,
+            "Alice",
+            "token-line-visited",
+        )
+        .await
+        .unwrap();
 
         assert_eq!(super::count_visited(&pool, player_id).await.unwrap(), 0);
         super::insert_visited_room(&pool, player_id, room_a)
@@ -374,9 +405,15 @@ mod tests {
     #[sqlx::test]
     async fn mark_finished_sets_finished_at(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
-        let player_id = super::insert(&pool, "line-finished-repo", event_id, "Alice")
-            .await
-            .unwrap();
+        let player_id = super::insert(
+            &pool,
+            "line-finished-repo",
+            event_id,
+            "Alice",
+            "token-line-finished-repo",
+        )
+        .await
+        .unwrap();
 
         super::mark_finished(&pool, player_id).await.unwrap();
         let player = super::find_by_line_user_and_event(&pool, "line-finished-repo", event_id)
@@ -403,15 +440,33 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        super::insert(&pool, "line-ranking-1", event_id, "Alice")
-            .await
-            .unwrap();
-        super::insert(&pool, "line-ranking-2", event_id, "Bob")
-            .await
-            .unwrap();
-        super::insert(&pool, "line-ranking-other", other_event_id, "Carol")
-            .await
-            .unwrap();
+        super::insert(
+            &pool,
+            "line-ranking-1",
+            event_id,
+            "Alice",
+            "token-line-ranking-1",
+        )
+        .await
+        .unwrap();
+        super::insert(
+            &pool,
+            "line-ranking-2",
+            event_id,
+            "Bob",
+            "token-line-ranking-2",
+        )
+        .await
+        .unwrap();
+        super::insert(
+            &pool,
+            "line-ranking-other",
+            other_event_id,
+            "Carol",
+            "token-line-ranking-other",
+        )
+        .await
+        .unwrap();
 
         let players = super::find_all_by_event(&pool, event_id).await.unwrap();
         let names: Vec<_> = players

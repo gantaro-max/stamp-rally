@@ -80,12 +80,12 @@ pub async fn checkin(State(state): State<AppState>, Json(body): Json<CheckinRequ
     match outcome {
         game_service::CheckinOutcome::NextQuest(reply) => {
             if state.send_line_replies {
-                let message = line_client::to_line_message(&reply, &state.liff_id);
+                let messages = line_client::to_line_messages(&reply, &state.liff_id);
                 if let Err(err) = line_client::push_message(
                     &state.http_client,
                     &state.line_channel_access_token,
                     &line_user_id,
-                    message,
+                    messages,
                 )
                 .await
                 {
@@ -96,12 +96,12 @@ pub async fn checkin(State(state): State<AppState>, Json(body): Json<CheckinRequ
         }
         game_service::CheckinOutcome::Cleared(reply) => {
             if state.send_line_replies {
-                let message = line_client::to_line_message(&reply, &state.liff_id);
+                let messages = line_client::to_line_messages(&reply, &state.liff_id);
                 if let Err(err) = line_client::push_message(
                     &state.http_client,
                     &state.line_channel_access_token,
                     &line_user_id,
-                    message,
+                    messages,
                 )
                 .await
                 {
@@ -207,10 +207,15 @@ mod tests {
         line_user_id: &str,
         room_id: i32,
     ) -> i32 {
-        let player_id =
-            crate::repository::player_repository::insert(pool, line_user_id, event_id, "Alice")
-                .await
-                .unwrap();
+        let player_id = crate::repository::player_repository::insert(
+            pool,
+            line_user_id,
+            event_id,
+            "Alice",
+            &format!("stamp-token-{line_user_id}"),
+        )
+        .await
+        .unwrap();
         crate::repository::player_repository::update_current_room(pool, player_id, room_id)
             .await
             .unwrap();

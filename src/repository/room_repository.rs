@@ -172,6 +172,26 @@ pub async fn find_by_qr_uuid(pool: &MySqlPool, qr_uuid: &str) -> Result<Option<R
     }))
 }
 
+pub async fn find_visited_room_names_ordered(
+    pool: &MySqlPool,
+    player_id: i32,
+) -> Result<Vec<String>, sqlx::Error> {
+    let rows = sqlx::query(
+        r#"
+        SELECT rooms.room_name AS room_name
+        FROM visited_rooms
+        JOIN rooms ON rooms.id = visited_rooms.room_id
+        WHERE visited_rooms.player_id = ?
+        ORDER BY visited_rooms.visited_at ASC
+        "#,
+    )
+    .bind(player_id)
+    .fetch_all(pool)
+    .await?;
+
+    rows.iter().map(|row| row.try_get("room_name")).collect()
+}
+
 pub async fn find_random_unvisited(
     pool: &MySqlPool,
     event_id: i32,

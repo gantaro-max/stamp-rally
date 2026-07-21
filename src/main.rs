@@ -233,6 +233,10 @@ fn app_router_with_state(state: AppState) -> Router {
         )
         .route("/public/image/{uuid}", get(handlers::image::serve))
         .route(
+            "/public/stamp-card/{token}",
+            get(handlers::image::stamp_card),
+        )
+        .route(
             "/auth/login",
             get(handlers::auth::login_form).post(handlers::auth::login),
         )
@@ -1570,10 +1574,15 @@ mod tests {
         started_at: &str,
         finished_at: Option<&str>,
     ) {
-        let player_id =
-            crate::repository::player_repository::insert(pool, line_user_id, event_id, player_name)
-                .await
-                .unwrap();
+        let player_id = crate::repository::player_repository::insert(
+            pool,
+            line_user_id,
+            event_id,
+            player_name,
+            &format!("rank-{line_user_id}"),
+        )
+        .await
+        .unwrap();
         sqlx::query("UPDATE players SET started_at = ?, finished_at = ? WHERE id = ?")
             .bind(started_at)
             .bind(finished_at)
@@ -1640,7 +1649,7 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let body = String::from_utf8(body.to_vec()).unwrap();
         assert!(body.contains("Alice"));
-        assert!(body.contains("<td>1</td>"));
+        assert!(body.contains("1位"));
         assert!(body.contains("12:34"));
     }
 
@@ -1705,7 +1714,7 @@ mod tests {
 
         assert!(body.contains("圏外"));
         assert!(bob > unfinished_heading);
-        assert!(!body.contains("<td>1</td>"));
+        assert!(!body.contains("1位"));
     }
 
     #[tokio::test]

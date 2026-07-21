@@ -1,6 +1,7 @@
 use std::{future::Future, time::Duration};
 
 use sqlx::MySqlPool;
+use uuid::Uuid;
 
 use crate::repository::{
     event_repository, pending_registration_repository, player_repository, room_image_repository,
@@ -15,6 +16,10 @@ pub enum ReplyMessage {
         room_name: String,
         quest_text: String,
         image_url: Option<String>,
+        stamp_card_url: String,
+    },
+    StampStatus {
+        image_url: String,
     },
     Cleared {
         elapsed: String,
@@ -175,7 +180,10 @@ pub async fn handle_text_message(
                 "参加できる部屋が登録されていません。管理者にお問い合わせください。".to_string(),
             ));
         }
-        let player_id = player_repository::insert(pool, line_user_id, event.id, text).await?;
+        let stamp_card_token = Uuid::new_v4().to_string();
+        let player_id =
+            player_repository::insert(pool, line_user_id, event.id, text, &stamp_card_token)
+                .await?;
         pending_registration_repository::delete(pool, line_user_id, event.id).await?;
         let Some(room) = room_repository::find_random_unvisited(pool, event.id, player_id).await?
         else {
@@ -184,7 +192,14 @@ pub async fn handle_text_message(
             ));
         };
         player_repository::update_current_room(pool, player_id, room.id).await?;
-        return quest_reply_for_room(pool, public_base_url, &room, "最初の部屋は").await;
+        return quest_reply_for_room(
+            pool,
+            public_base_url,
+            &room,
+            "最初の部屋は",
+            &stamp_card_token,
+        )
+        .await;
     }
 
     let Some(player) = player else {
@@ -214,6 +229,12 @@ pub async fn handle_text_message(
             room.hint_msg
                 .unwrap_or_else(|| "ヒントは登録されていません。".to_string()),
         ));
+    }
+
+    if text == "スタンプ状況" {
+        return Ok(ReplyMessage::StampStatus {
+            image_url: stamp_card_url(public_base_url, &player.stamp_card_token),
+        });
     }
 
     if !event.require_answer_check {
@@ -292,7 +313,14 @@ pub async fn checkin(
         "【{}】クリアおめでとうございます。次の部屋は",
         room.room_name
     );
-    let reply = quest_reply_for_room(pool, public_base_url, &next_room, intro).await?;
+    let reply = quest_reply_for_room(
+        pool,
+        public_base_url,
+        &next_room,
+        intro,
+        &player.stamp_card_token,
+    )
+    .await?;
     Ok(CheckinOutcome::NextQuest(reply))
 }
 
@@ -303,8 +331,15 @@ fn cleared_reply(player: &player_repository::Player) -> ReplyMessage {
     ReplyMessage::Cleared { elapsed }
 }
 
+fn stamp_card_url(public_base_url: &str, token: &str) -> String {
+    format!(
+        "{}/public/stamp-card/{token}",
+        public_base_url.trim_end_matches('/')
+    )
+}
+
 fn help_text() -> String {
-    "『開始』で参加登録します。案内された部屋へ移動し、必要に応じて答えを送信してからQRコードを読み込んでください。『ヒント』でヒント、『リセット』で参加データを削除できます。".to_string()
+    "『開始』で参加登録します。案内された部屋へ移動し、必要に応じて答えを送信してからQRコードを読み込んでください。『ヒント』でヒント、『スタンプ状況』で現在集めたスタンプを確認、『リセット』で参加データを削除できます。".to_string()
 }
 
 fn name_prompt(is_team_mode: bool) -> String {
@@ -325,7 +360,14 @@ async fn quest_reply_for_player(
             "現在の部屋が設定されていません。『開始』と送信してください。".to_string(),
         ));
     };
-    quest_reply_for_room(pool, public_base_url, &room, "現在向かっている部屋は").await
+    quest_reply_for_room(
+        pool,
+        public_base_url,
+        &room,
+        "現在向かっている部屋は",
+        &player.stamp_card_token,
+    )
+    .await
 }
 
 async fn current_room(
@@ -343,6 +385,7 @@ async fn quest_reply_for_room(
     public_base_url: &str,
     room: &room_repository::Room,
     intro: impl Into<String>,
+    stamp_card_token: &str,
 ) -> Result<ReplyMessage, GameServiceError> {
     let image_url = if let Some(image_id) = room.image_id {
         room_image_repository::find_uuid_by_id(pool, image_id)
@@ -362,6 +405,7 @@ async fn quest_reply_for_room(
         room_name: room.room_name.clone(),
         quest_text: room.quest_text.clone(),
         image_url,
+        stamp_card_url: stamp_card_url(public_base_url, stamp_card_token),
     })
 }
 
@@ -474,10 +518,15 @@ mod tests {
         let answer = require_answer_check.then_some("Red, blue");
         let hint = require_answer_check.then_some("Look near the shelf");
         let room_id = seed_room(pool, event_id, "Library", answer, hint).await;
-        let player_id =
-            crate::repository::player_repository::insert(pool, line_user_id, event_id, "Alice")
-                .await
-                .unwrap();
+        let player_id = crate::repository::player_repository::insert(
+            pool,
+            line_user_id,
+            event_id,
+            "Alice",
+            &format!("stamp-token-{line_user_id}"),
+        )
+        .await
+        .unwrap();
         crate::repository::player_repository::update_current_room(pool, player_id, room_id)
             .await
             .unwrap();
@@ -488,6 +537,7 @@ mod tests {
         match reply {
             ReplyMessage::Text(value) => value,
             ReplyMessage::Quest { .. } => panic!("expected text reply"),
+            ReplyMessage::StampStatus { image_url } => panic!("expected text reply: {image_url}"),
             ReplyMessage::Cleared { elapsed } => panic!("expected text reply: {elapsed}"),
         }
     }
@@ -954,6 +1004,7 @@ mod tests {
             "line-hint-missing",
             event_id,
             "Alice",
+            "stamp-token-line-hint-missing",
         )
         .await
         .unwrap();
@@ -1087,10 +1138,15 @@ mod tests {
         line_user_id: &str,
         room_id: i32,
     ) -> i32 {
-        let player_id =
-            crate::repository::player_repository::insert(pool, line_user_id, event_id, "Alice")
-                .await
-                .unwrap();
+        let player_id = crate::repository::player_repository::insert(
+            pool,
+            line_user_id,
+            event_id,
+            "Alice",
+            &format!("stamp-token-{line_user_id}"),
+        )
+        .await
+        .unwrap();
         crate::repository::player_repository::update_current_room(pool, player_id, room_id)
             .await
             .unwrap();

@@ -139,6 +139,10 @@ pub fn build_quest_flex_message(
     })
 }
 
+pub fn build_stamp_status_image_message(url: &str) -> Value {
+    json!({"type": "image", "originalContentUrl": url, "previewImageUrl": url})
+}
+
 pub fn build_cleared_flex_message(elapsed: &str) -> Value {
     json!({
         "type": "flex",
@@ -168,16 +172,23 @@ pub fn build_cleared_flex_message(elapsed: &str) -> Value {
     })
 }
 
-pub fn to_line_message(reply: &ReplyMessage, liff_id: &str) -> Value {
+pub fn to_line_messages(reply: &ReplyMessage, liff_id: &str) -> Vec<Value> {
     match reply {
-        ReplyMessage::Text(text) => build_text_message(text),
+        ReplyMessage::Text(text) => vec![build_text_message(text)],
         ReplyMessage::Quest {
             intro,
             room_name,
             quest_text,
             image_url,
-        } => build_quest_flex_message(intro, room_name, quest_text, image_url.as_deref(), liff_id),
-        ReplyMessage::Cleared { elapsed } => build_cleared_flex_message(elapsed),
+            stamp_card_url,
+        } => vec![
+            build_quest_flex_message(intro, room_name, quest_text, image_url.as_deref(), liff_id),
+            build_stamp_status_image_message(stamp_card_url),
+        ],
+        ReplyMessage::StampStatus { image_url } => {
+            vec![build_stamp_status_image_message(image_url)]
+        }
+        ReplyMessage::Cleared { elapsed } => vec![build_cleared_flex_message(elapsed)],
     }
 }
 
@@ -185,13 +196,13 @@ pub async fn send_reply(
     client: &reqwest::Client,
     access_token: &str,
     reply_token: &str,
-    message: Value,
+    messages: Vec<Value>,
 ) -> Result<(), LineClientError> {
     // Integration tests do not exercise LINE's network API in this environment.
     let response = client
         .post("https://api.line.me/v2/bot/message/reply")
         .bearer_auth(access_token)
-        .json(&json!({"replyToken": reply_token, "messages": [message]}))
+        .json(&json!({"replyToken": reply_token, "messages": messages}))
         .send()
         .await?;
 
@@ -250,13 +261,13 @@ pub async fn push_message(
     client: &reqwest::Client,
     access_token: &str,
     to: &str,
-    message: Value,
+    messages: Vec<Value>,
 ) -> Result<(), LineClientError> {
     // Integration tests do not exercise LINE's network API in this environment.
     let response = client
         .post("https://api.line.me/v2/bot/message/push")
         .bearer_auth(access_token)
-        .json(&json!({"to": to, "messages": [message]}))
+        .json(&json!({"to": to, "messages": messages}))
         .send()
         .await?;
 
