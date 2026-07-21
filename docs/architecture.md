@@ -97,7 +97,7 @@ Handler(Axum) → Service → Repository（sqlx） → DB
 #### アプリ状態（`AppState`）と `FromRef`
 
 - LINE連携の追加に伴い、`main.rs` の `with_state` を単一の `MySqlPool` から `AppState`（`Clone`）に切り替える
-  - `AppState { pool: MySqlPool, line_channel_secret: Arc<str>, line_channel_access_token: Arc<str>, public_base_url: Arc<str>, liff_id: Arc<str>, line_login_channel_id: Arc<str>, verify_id_tokens: bool, pending_registrations: PendingRegistrations, http_client: reqwest::Client, send_line_replies: bool }`（`liff_id`・`line_login_channel_id`はSlice B、`verify_id_tokens`・`send_line_replies`はテスト用フック、`http_client`はLINE API呼び出し共用のため後続スライスで追加）
+  - `AppState { pool: MySqlPool, line_channel_secret: Arc<str>, line_channel_access_token: Arc<str>, public_base_url: Arc<str>, liff_id: Arc<str>, line_login_channel_id: Arc<str>, line_add_friend_url: Option<Arc<str>>, verify_id_tokens: bool, pending_registrations: PendingRegistrations, http_client: reqwest::Client, send_line_replies: bool }`（`liff_id`・`line_login_channel_id`はSlice B、`verify_id_tokens`・`send_line_replies`はテスト用フック、`http_client`はLINE API呼び出し共用のため後続スライスで追加。`line_add_friend_url`はダッシュボードの友だち追加QRコード表示用、22節参照）
   - 既存ハンドラーは `State<MySqlPool>` を使い続けられるよう、`impl FromRef<AppState> for MySqlPool`（`state.pool.clone()` を返す）を実装し、既存シグネチャを変更しない
   - LINE Webhook・画像配信ハンドラーは必要に応じて `State<AppState>` や `State<Arc<str>>`（`FromRef` 経由）を使う
 - `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` / `PUBLIC_BASE_URL` / `LIFF_ID` / `LINE_LOGIN_CHANNEL_ID` は `DATABASE_URL` と同様、起動時に未設定ならエラー出力してプロセスを終了する（`.env.example` に追記済み）
@@ -351,6 +351,7 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 | `PUBLIC_BASE_URL` | 画像URL等を組み立てる際に前置する公開ベースURL（末尾スラッシュなし、例 `https://xxxx.koyeb.app`） | 同上 |
 | `LIFF_ID` | LIFFページで `liff.init({ liffId })` に渡すLIFF ID（15節） | 同上（Slice Bから必須化） |
 | `LINE_LOGIN_CHANNEL_ID` | IDトークン検証エンドポイントに渡す `client_id`（LIFFアプリが属するチャネルのID。15節） | 同上（Slice Bで追加） |
+| `LINE_ADD_FRIEND_URL` | LINE公式アカウントマネージャーで発行される「友だち追加URL」（例 `https://lin.ee/xxxxx`）。ダッシュボードの友だち追加QRコード（22節）に使う | 未設定でもエラーにせず起動を継続する（他のLINE関連変数と異なりオプション項目。未設定時はダッシュボードのQRコード表示を省略する） |
 
 ---
 
@@ -478,6 +479,7 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
   1. **イベント設定状況**: `is_team_mode`（個人戦/チーム戦）・`require_answer_check`（判定モード）の現在値を表示し、`/admin/settings`へのリンクを設置する
   2. **部屋一覧**: 登録済み部屋数（`room_service::list`の件数、上限15との対比が分かる形。例:「3 / 15部屋」）を表示し、`/admin/rooms`（部屋ごとの編集・QR表示はそちらに既存の導線がある）へのリンクを設置する。ダッシュボード自体に部屋ごとの個別リンクを複製する必要はない（一覧の二重管理を避けるため）
   3. **ランキング**: `/admin/ranking`へのリンクを設置する（ダッシュボード側でランキングデータ自体は取得・表示しない。既存の`/admin/ranking`が詳細表示を担う）
+  4. **友だち追加QRコード**（22節で追加）: `LINE_ADD_FRIEND_URL`が設定されていれば、`GET /admin/line-qr`が返すQRコード画像（`<img>`）と、友だち追加URLそのもの（テキスト。スタッフがコピー・共有する用途）を表示する。未設定であれば画像の代わりに「LINE_ADD_FRIEND_URL が未設定です」という案内文のみ表示する
 - 他の管理画面同様`admin/_base.html`を継承し、ナビゲーション（部屋管理・設定・ランキング）とログアウトフォームを共有する。ログアウトフォームが要求する`csrf_token`をハンドラーで発行する（他のGET専用管理画面ハンドラー、例: `ranking`と同じパターン）
 - 状態変更を伴わない画面のため、ダッシュボード自体のCSRF保護は不要（共有レイアウトのログアウトフォームのCSRF検証は既存の`/auth/logout`ハンドラー側で行われる）
 
@@ -556,5 +558,28 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
 **対策**: 8節に記載の通り、`/callback`は署名検証・JSONパースが完了した時点で即座に200を返し、イベントごとの実処理（`game_service`呼び出し・LINEへの返信送信）は`tokio::spawn`によるバックグラウンドタスクとして切り離す。これにより、Webhookレスポンスの所要時間は署名検証・JSONパース（通常マイクロ秒〜ミリ秒オーダー）のみに依存するようになり、DBやLINE API呼び出しがどれだけ遅延しても（今回のような接続断も含め）LINE側のタイムアウトに引っかかることが構造的になくなる。1〜3で設定したタイムアウト値（10秒・15秒）自体は、バックグラウンドタスクがDBコネクションプールを無期限に占有し続けることを防ぐ安全装置として引き続き有効であり、変更しない。
 
 **`/liff/checkin`は対象外**: この問題はLINEプラットフォームがWebhookの呼び出し元（HTTPクライアント）として振る舞う`/callback`に固有のものである。`/liff/checkin`の呼び出し元はLIFFページ自身のブラウザ（`fetch`）であり、LINEプラットフォームのような固定の応答待ちタイムアウトを持たない。また`/liff/checkin`のレスポンス自体がLIFFページの表示（成功/クリア/拒否）に必要なため、`/callback`と同様に「即座に200を返してバックグラウンド処理に切り離す」設計は適用できない（有効な応答内容を返す前にレスポンスを返してしまうと、LIFFページが正しい結果を表示できなくなる）。`/liff/checkin`は1〜3で設定した15秒のDB呼び出しタイムアウトのままとする。
+
+---
+
+## 22. ダッシュボードの友だち追加QRコード（`GET /admin/line-qr`）
+
+本番運用フィードバックで、参加者がスタンプラリーを始めるにはまず当日会場でLINE公式アカウントを友だち追加する必要があるが、その導線（友だち追加用のQRコード）を運営が用意する手段が無かったとの指摘があった。ダッシュボードに友だち追加QRコードを表示することで、受付スタッフがその場で参加者に提示できるようにする。
+
+### 設計方針
+
+- QRコードの中身は部屋QR（5節）と同様、`qr_service::render_png`（既に汎用的な`&str -> PNG`関数であり変更不要）にそのまま友だち追加URLの文字列を渡すだけでよい。URLをラップしたり短縮したりしない
+- 友だち追加URL自体はアプリが動的に生成できるものではなく、LINE公式アカウントマネージャー（manager.line.biz）で個別に発行される値のため、新規環境変数`LINE_ADD_FRIEND_URL`として設定する（14節）
+- 他のLINE関連環境変数（`LINE_CHANNEL_SECRET`等）と異なり、**未設定でもプロセスを終了しない**。理由: この値はLINE公式アカウントの発行タイミングに依存し、それより前に他の機能をデプロイ・運用したいケースがあるため（本アプリは新規のLINE公式アカウントを別途作成する運用のため、アカウント発行前に他の変数だけ揃えて起動できる必要がある）。`main.rs`では`env::var("LINE_ADD_FRIEND_URL").ok().filter(|v| !v.is_empty())`として`Option<String>`で受け取り、`AppState.line_add_friend_url: Option<Arc<str>>`に格納する
+- `handlers::admin::dashboard`は現状`State<MySqlPool>`のみを受け取っているが、`line_add_friend_url`を参照する必要があるため`State<AppState>`に変更する（`liff`・`line_webhook`ハンドラーと同じ形。`MySqlPool`は`state.pool`から取り出す）
+- `DashboardTemplate`に`line_add_friend_url: Option<String>`を追加し、テンプレート側は`auth/login.html`の`error_message`と同じ`{% match %}`パターンで分岐する:
+  - `Some(url)` → `<img src="/admin/line-qr">` とURLのテキスト表示（コピー・スタッフ間共有用）
+  - `None` → 「LINE_ADD_FRIEND_URL が未設定です」という案内文のみ表示（QR画像や`/admin/line-qr`へのリンクは出さない）
+
+### `GET /admin/line-qr`
+
+- `require_admin`配下（他の管理画面と同様、認証必須。友だち追加URL自体は公開情報だが、QRの生成元エンドポイントを管理画面の外に出す理由がないため他のQRエンドポイントと足並みを揃える）
+- `AppState.line_add_friend_url`が`None`の場合は404を返す
+- `Some(url)`の場合、`qr_service::render_png(&url)`の結果を`Content-Type: image/png`で返す（`handlers::rooms::qr`と同じレスポンスの組み立て方）
+- 状態変更を伴わないためCSRF保護は不要
 
 ---

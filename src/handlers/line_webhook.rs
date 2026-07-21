@@ -228,6 +228,7 @@ mod tests {
             "https://example.test",
             "test-liff-id",
             "test-login-channel-id",
+            None,
         );
         state.send_line_replies = false;
         let pool = state.pool.clone();
@@ -269,6 +270,7 @@ mod tests {
             "https://example.test",
             "test-liff-id",
             "test-login-channel-id",
+            None,
         );
         state.send_line_replies = false;
         state.spawn_background_tasks = false;

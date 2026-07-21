@@ -9,17 +9,17 @@
 </div>
 
 <div class="row g-3">
-  <div class="col-12 col-md-4">
+  <div class="col-12 col-md-6 col-xl-3">
     <div class="stat-card">
       <div class="stat-label">部屋登録</div>
-      <div class="stat-value">{{ room_count }} / 15</div>
+      <div class="stat-value">{{ room_count }} / 15部屋</div>
       <div class="progress mb-2" style="height: 6px;">
         <div class="progress-bar" role="progressbar" style="width: {{ room_count * 100 / 15 }}%;"></div>
       </div>
       <a class="stat-link" href="/admin/rooms">部屋管理へ</a>
     </div>
   </div>
-  <div class="col-12 col-md-4">
+  <div class="col-12 col-md-6 col-xl-3">
     <div class="stat-card">
       <div class="stat-label">イベント設定</div>
       <div class="mb-3">
@@ -29,11 +29,23 @@
       <a class="stat-link" href="/admin/settings">設定を編集</a>
     </div>
   </div>
-  <div class="col-12 col-md-4">
+  <div class="col-12 col-md-6 col-xl-3">
     <div class="stat-card">
       <div class="stat-label">ランキング</div>
       <p class="mb-3">クリアタイムのランキングを確認できます</p>
       <a class="stat-link" href="/admin/ranking">ランキングを見る</a>
+    </div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="stat-card">
+      <div class="stat-label">友だち追加QRコード</div>
+      {% match line_add_friend_url %}
+      {% when Some with (url) %}
+      <img src="/admin/line-qr" alt="友だち追加QRコード" class="img-fluid mb-2" style="max-width: 160px;">
+      <p class="mb-0 text-break">{{ url }}</p>
+      {% when None %}
+      <p class="mb-0">LINE_ADD_FRIEND_URL が未設定です</p>
+      {% endmatch %}
     </div>
   </div>
 </div>

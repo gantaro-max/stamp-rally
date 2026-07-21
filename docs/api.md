@@ -30,7 +30,7 @@
 
 | メソッド | パス | 説明 |
 |:--|:--|:--|
-| GET | `/admin/dashboard` | ダッシュボード（設定状況、部屋数、ランキングへのリンク） |
+| GET | `/admin/dashboard` | ダッシュボード（設定状況、部屋数、ランキングへのリンク、友だち追加QRコード） |
 | GET | `/admin/settings` | イベント設定画面 |
 | POST | `/admin/settings` | イベント設定更新（個人戦/チーム戦、判定モードの切替） |
 | GET | `/admin/rooms` | 部屋一覧 |
@@ -40,6 +40,7 @@
 | POST | `/admin/rooms/update/{id}` | 部屋の更新 |
 | POST | `/admin/rooms/delete/{id}` | 部屋の削除 |
 | GET | `/admin/rooms/{id}/qr` | 部屋のQRコード画像を表示・印刷用に出力（スタッフが現地で保持するため） |
+| GET | `/admin/line-qr` | LINE公式アカウントの友だち追加QRコード画像を表示（`LINE_ADD_FRIEND_URL`未設定時は404。詳細は [architecture.md](architecture.md) 22節） |
 | GET | `/admin/ranking` | クリアタイムランキング（所要時間の短い順。未クリア者は圏外セクションに別掲。詳細は [architecture.md](architecture.md) 17節） |
 
 ---

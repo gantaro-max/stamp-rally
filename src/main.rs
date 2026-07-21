@@ -22,6 +22,7 @@ pub struct AppState {
     pub public_base_url: Arc<str>,
     pub liff_id: Arc<str>,
     pub line_login_channel_id: Arc<str>,
+    pub line_add_friend_url: Option<Arc<str>>,
     pub verify_id_tokens: bool,
     pub http_client: reqwest::Client,
     pub send_line_replies: bool,
@@ -36,6 +37,7 @@ impl AppState {
         public_base_url: impl Into<Arc<str>>,
         liff_id: impl Into<Arc<str>>,
         line_login_channel_id: impl Into<Arc<str>>,
+        line_add_friend_url: Option<String>,
     ) -> Self {
         Self {
             pool,
@@ -44,6 +46,7 @@ impl AppState {
             public_base_url: public_base_url.into(),
             liff_id: liff_id.into(),
             line_login_channel_id: line_login_channel_id.into(),
+            line_add_friend_url: line_add_friend_url.map(Into::into),
             verify_id_tokens: true,
             http_client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
@@ -68,6 +71,13 @@ fn resolve_port(value: Option<&str>) -> u16 {
     value
         .and_then(|value| value.parse().ok())
         .unwrap_or(DEFAULT_PORT)
+}
+
+fn resolve_line_add_friend_url(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
 #[tokio::main]
@@ -102,6 +112,8 @@ async fn main() {
         eprintln!("LINE_LOGIN_CHANNEL_ID must be set: {err}");
         process::exit(1);
     });
+    let line_add_friend_url =
+        resolve_line_add_friend_url(env::var("LINE_ADD_FRIEND_URL").ok().as_deref());
 
     let pool = MySqlPoolOptions::new()
         .connect(&database_url)
@@ -120,6 +132,7 @@ async fn main() {
         public_base_url,
         liff_id,
         line_login_channel_id,
+        line_add_friend_url,
     ));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -174,6 +187,7 @@ fn app_router(pool: MySqlPool) -> Router {
         "https://example.test",
         "test-liff-id",
         "test-login-channel-id",
+        None,
     ))
 }
 
@@ -183,6 +197,7 @@ fn app_router_with_state(state: AppState) -> Router {
 
     let admin_router = Router::new()
         .route("/dashboard", get(handlers::admin::dashboard))
+        .route("/line-qr", get(handlers::admin::line_qr))
         .route(
             "/settings",
             get(handlers::admin::settings_form).post(handlers::admin::update_settings),
@@ -229,7 +244,7 @@ fn app_router_with_state(state: AppState) -> Router {
 
 #[cfg(test)]
 mod tests {
-    use super::app_router;
+    use super::{AppState, app_router, app_router_with_state};
     use axum::{
         Router,
         body::{Body, to_bytes},
@@ -343,6 +358,21 @@ mod tests {
             .unwrap()
     }
 
+    fn app_router_with_line_add_friend_url(
+        pool: sqlx::MySqlPool,
+        line_add_friend_url: Option<String>,
+    ) -> Router {
+        app_router_with_state(AppState::new(
+            pool,
+            "test-channel-secret",
+            "test-channel-access-token",
+            "https://example.test",
+            "test-liff-id",
+            "test-login-channel-id",
+            line_add_friend_url,
+        ))
+    }
+
     #[test]
     fn resolve_port_uses_numeric_env_value() {
         assert_eq!(super::resolve_port(Some("3000")), 3000);
@@ -357,6 +387,21 @@ mod tests {
     fn resolve_port_defaults_to_8000_when_invalid() {
         assert_eq!(super::resolve_port(Some("")), 8000);
         assert_eq!(super::resolve_port(Some("not-a-number")), 8000);
+    }
+
+    #[test]
+    fn resolve_line_add_friend_url_ignores_unset_or_blank_values() {
+        assert_eq!(super::resolve_line_add_friend_url(None), None);
+        assert_eq!(super::resolve_line_add_friend_url(Some("")), None);
+        assert_eq!(super::resolve_line_add_friend_url(Some("   ")), None);
+    }
+
+    #[test]
+    fn resolve_line_add_friend_url_returns_trimmed_value() {
+        assert_eq!(
+            super::resolve_line_add_friend_url(Some(" https://lin.ee/test1234 ")),
+            Some("https://lin.ee/test1234".to_string())
+        );
     }
 
     #[test]
@@ -594,6 +639,157 @@ mod tests {
         assert!(body.contains(r#"href="/admin/rooms""#));
         assert!(body.contains(r#"href="/admin/settings""#));
         assert!(body.contains(r#"href="/admin/ranking""#));
+    }
+
+    #[sqlx::test]
+    async fn authenticated_dashboard_without_line_add_friend_url_shows_setup_message(
+        pool: sqlx::MySqlPool,
+    ) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app = app_router_with_line_add_friend_url(pool, None);
+        let session_cookie = login_as_admin(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/dashboard")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("LINE_ADD_FRIEND_URL が未設定です"));
+        assert!(!body.contains(r#"<img src="/admin/line-qr""#));
+    }
+
+    #[sqlx::test]
+    async fn authenticated_dashboard_with_line_add_friend_url_shows_qr_image_and_url(
+        pool: sqlx::MySqlPool,
+    ) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app =
+            app_router_with_line_add_friend_url(pool, Some("https://lin.ee/test1234".to_string()));
+        let session_cookie = login_as_admin(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/dashboard")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains(r#"<img src="/admin/line-qr""#));
+        assert!(body.contains("https://lin.ee/test1234"));
+    }
+
+    #[sqlx::test]
+    async fn authenticated_line_qr_returns_png_for_line_add_friend_url(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app =
+            app_router_with_line_add_friend_url(pool, Some("https://lin.ee/test1234".to_string()));
+        let session_cookie = login_as_admin(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/line-qr")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "image/png"
+        );
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(image::guess_format(&body).unwrap(), image::ImageFormat::Png);
+        let image = image::load_from_memory(&body).unwrap().to_luma8();
+        let mut prepared = rqrr::PreparedImage::prepare(image);
+        let grids = prepared.detect_grids();
+        let (_, decoded) = grids[0].decode().unwrap();
+
+        assert_eq!(decoded, "https://lin.ee/test1234");
+    }
+
+    #[sqlx::test]
+    async fn authenticated_line_qr_returns_not_found_without_line_add_friend_url(
+        pool: sqlx::MySqlPool,
+    ) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app = app_router_with_line_add_friend_url(pool, None);
+        let session_cookie = login_as_admin(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/line-qr")
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn admin_line_qr_redirects_when_not_logged_in() {
+        let response = app_router(test_pool())
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/line-qr")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/auth/login"
+        );
     }
 
     #[sqlx::test]
