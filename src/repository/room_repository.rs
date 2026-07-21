@@ -10,6 +10,8 @@ pub struct Room {
     pub answer: Option<String>,
     pub hint_msg: Option<String>,
     pub image_id: Option<i32>,
+    pub stamp_label: Option<String>,
+    pub stamp_image_id: Option<i32>,
     pub qr_uuid: String,
 }
 
@@ -31,12 +33,14 @@ pub async fn insert(
     answer: Option<&str>,
     hint_msg: Option<&str>,
     image_id: Option<i32>,
+    stamp_label: Option<&str>,
+    stamp_image_id: Option<i32>,
     qr_uuid: &str,
 ) -> Result<i32, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        INSERT INTO rooms (event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO rooms (event_id, room_name, quest_text, answer, hint_msg, image_id, stamp_label, stamp_image_id, qr_uuid)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(event_id)
@@ -45,6 +49,8 @@ pub async fn insert(
     .bind(answer)
     .bind(hint_msg)
     .bind(image_id)
+    .bind(stamp_label)
+    .bind(stamp_image_id)
     .bind(qr_uuid)
     .execute(pool)
     .await?;
@@ -52,6 +58,7 @@ pub async fn insert(
     Ok(result.last_insert_id() as i32)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update(
     pool: &MySqlPool,
     id: i32,
@@ -60,11 +67,14 @@ pub async fn update(
     answer: Option<&str>,
     hint_msg: Option<&str>,
     image_id: Option<i32>,
+    stamp_label: Option<&str>,
+    stamp_image_id: Option<i32>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         UPDATE rooms
-        SET room_name = ?, quest_text = ?, answer = ?, hint_msg = ?, image_id = ?
+        SET room_name = ?, quest_text = ?, answer = ?, hint_msg = ?, image_id = ?,
+            stamp_label = ?, stamp_image_id = ?
         WHERE id = ?
         "#,
     )
@@ -73,6 +83,8 @@ pub async fn update(
     .bind(answer)
     .bind(hint_msg)
     .bind(image_id)
+    .bind(stamp_label)
+    .bind(stamp_image_id)
     .bind(id)
     .execute(pool)
     .await?;
@@ -92,7 +104,7 @@ pub async fn delete(pool: &MySqlPool, id: i32) -> Result<(), sqlx::Error> {
 pub async fn find_all(pool: &MySqlPool, event_id: i32) -> Result<Vec<Room>, sqlx::Error> {
     let rows = sqlx::query(
         r#"
-        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid
+        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, stamp_label, stamp_image_id, qr_uuid
         FROM rooms
         WHERE event_id = ?
         ORDER BY id
@@ -112,6 +124,8 @@ pub async fn find_all(pool: &MySqlPool, event_id: i32) -> Result<Vec<Room>, sqlx
                 answer: row.try_get("answer")?,
                 hint_msg: row.try_get("hint_msg")?,
                 image_id: row.try_get("image_id")?,
+                stamp_label: row.try_get("stamp_label")?,
+                stamp_image_id: row.try_get("stamp_image_id")?,
                 qr_uuid: row.try_get("qr_uuid")?,
             })
         })
@@ -121,7 +135,7 @@ pub async fn find_all(pool: &MySqlPool, event_id: i32) -> Result<Vec<Room>, sqlx
 pub async fn find_by_id(pool: &MySqlPool, id: i32) -> Result<Option<Room>, sqlx::Error> {
     let Some(row) = sqlx::query(
         r#"
-        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid
+        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, stamp_label, stamp_image_id, qr_uuid
         FROM rooms
         WHERE id = ?
         "#,
@@ -141,6 +155,8 @@ pub async fn find_by_id(pool: &MySqlPool, id: i32) -> Result<Option<Room>, sqlx:
         answer: row.try_get("answer")?,
         hint_msg: row.try_get("hint_msg")?,
         image_id: row.try_get("image_id")?,
+        stamp_label: row.try_get("stamp_label")?,
+        stamp_image_id: row.try_get("stamp_image_id")?,
         qr_uuid: row.try_get("qr_uuid")?,
     }))
 }
@@ -148,7 +164,7 @@ pub async fn find_by_id(pool: &MySqlPool, id: i32) -> Result<Option<Room>, sqlx:
 pub async fn find_by_qr_uuid(pool: &MySqlPool, qr_uuid: &str) -> Result<Option<Room>, sqlx::Error> {
     let Some(row) = sqlx::query(
         r#"
-        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid
+        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, stamp_label, stamp_image_id, qr_uuid
         FROM rooms
         WHERE qr_uuid = ?
         "#,
@@ -168,6 +184,8 @@ pub async fn find_by_qr_uuid(pool: &MySqlPool, qr_uuid: &str) -> Result<Option<R
         answer: row.try_get("answer")?,
         hint_msg: row.try_get("hint_msg")?,
         image_id: row.try_get("image_id")?,
+        stamp_label: row.try_get("stamp_label")?,
+        stamp_image_id: row.try_get("stamp_image_id")?,
         qr_uuid: row.try_get("qr_uuid")?,
     }))
 }
@@ -199,7 +217,7 @@ pub async fn find_random_unvisited(
 ) -> Result<Option<Room>, sqlx::Error> {
     let Some(row) = sqlx::query(
         r#"
-        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid
+        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, stamp_label, stamp_image_id, qr_uuid
         FROM rooms
         WHERE event_id = ?
           AND NOT EXISTS (
@@ -228,6 +246,8 @@ pub async fn find_random_unvisited(
         answer: row.try_get("answer")?,
         hint_msg: row.try_get("hint_msg")?,
         image_id: row.try_get("image_id")?,
+        stamp_label: row.try_get("stamp_label")?,
+        stamp_image_id: row.try_get("stamp_image_id")?,
         qr_uuid: row.try_get("qr_uuid")?,
     }))
 }
@@ -261,6 +281,8 @@ mod tests {
             Some("red"),
             Some("look up"),
             None,
+            None,
+            None,
             "qr-uuid-1",
         )
         .await
@@ -291,6 +313,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
                 &format!("qr-count-{index}"),
             )
             .await
@@ -311,6 +335,8 @@ mod tests {
             Some("old"),
             Some("old hint"),
             None,
+            None,
+            None,
             "qr-update-1",
         )
         .await
@@ -323,6 +349,8 @@ mod tests {
             "New Quest",
             Some("new"),
             Some("new hint"),
+            None,
+            None,
             None,
         )
         .await
@@ -344,6 +372,8 @@ mod tests {
             event_id,
             "Room to delete",
             "Quest",
+            None,
+            None,
             None,
             None,
             None,
@@ -382,6 +412,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
             "qr-visited-order-1",
         )
         .await
@@ -391,6 +423,8 @@ mod tests {
             event_id,
             "2部屋目",
             "Quest",
+            None,
+            None,
             None,
             None,
             None,
@@ -445,6 +479,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
             "qr-random-1",
         )
         .await
@@ -457,6 +493,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
             "qr-random-2",
         )
         .await
@@ -466,6 +504,8 @@ mod tests {
             event_id,
             "Unvisited B",
             "Quest",
+            None,
+            None,
             None,
             None,
             None,
@@ -503,6 +543,8 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
+                None,
                 &format!("qr-all-visited-{index}"),
             )
             .await
@@ -537,6 +579,91 @@ mod tests {
     }
 
     #[sqlx::test]
+    async fn insert_persists_stamp_label_and_stamp_image_id(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let stamp_image_id = crate::repository::room_image_repository::insert(
+            &pool,
+            "stamp-image-repo-insert",
+            &[1, 2, 3],
+            "image/jpeg",
+        )
+        .await
+        .unwrap();
+
+        let room_id = super::insert(
+            &pool,
+            event_id,
+            "Room A",
+            "Quest",
+            None,
+            None,
+            None,
+            Some("図書"),
+            Some(stamp_image_id),
+            "qr-stamp-custom-1",
+        )
+        .await
+        .unwrap();
+
+        let room = super::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        assert_eq!(room.stamp_label.as_deref(), Some("図書"));
+        assert_eq!(room.stamp_image_id, Some(stamp_image_id));
+    }
+
+    #[sqlx::test]
+    async fn update_changes_stamp_label_and_stamp_image_id(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let old_stamp_image_id = crate::repository::room_image_repository::insert(
+            &pool,
+            "stamp-image-repo-old",
+            &[1, 2, 3],
+            "image/jpeg",
+        )
+        .await
+        .unwrap();
+        let new_stamp_image_id = crate::repository::room_image_repository::insert(
+            &pool,
+            "stamp-image-repo-new",
+            &[4, 5, 6],
+            "image/jpeg",
+        )
+        .await
+        .unwrap();
+        let room_id = super::insert(
+            &pool,
+            event_id,
+            "Room A",
+            "Quest",
+            None,
+            None,
+            None,
+            Some("旧"),
+            Some(old_stamp_image_id),
+            "qr-stamp-custom-2",
+        )
+        .await
+        .unwrap();
+
+        super::update(
+            &pool,
+            room_id,
+            "Room B",
+            "Quest B",
+            None,
+            None,
+            None,
+            Some("新印"),
+            Some(new_stamp_image_id),
+        )
+        .await
+        .unwrap();
+
+        let room = super::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        assert_eq!(room.stamp_label.as_deref(), Some("新印"));
+        assert_eq!(room.stamp_image_id, Some(new_stamp_image_id));
+    }
+
+    #[sqlx::test]
     async fn finds_room_by_qr_uuid(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
         let room_id = super::insert(
@@ -544,6 +671,8 @@ mod tests {
             event_id,
             "QR Room",
             "Scan the code",
+            None,
+            None,
             None,
             None,
             None,

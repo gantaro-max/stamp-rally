@@ -214,6 +214,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
             "qr-player-room",
         )
         .await
@@ -374,6 +376,8 @@ mod tests {
             event_id,
             "Room 2",
             "Quest",
+            None,
+            None,
             None,
             None,
             None,

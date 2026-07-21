@@ -195,6 +195,8 @@ mod tests {
             Some("red"),
             Some("hint"),
             None,
+            None,
+            None,
             qr_uuid,
         )
         .await

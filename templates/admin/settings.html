@@ -6,7 +6,7 @@
 <div class="page-header">
   <h1>イベント設定</h1>
 </div>
-<form method="post" action="/admin/settings">
+<form method="post" action="/admin/settings" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <div class="form-check mb-3">
     <input class="form-check-input" type="checkbox" id="is_team_mode" name="is_team_mode" {% if is_team_mode %}checked{% endif %}>
@@ -16,6 +16,7 @@
     <input class="form-check-input" type="checkbox" id="require_answer_check" name="require_answer_check" {% if require_answer_check %}checked{% endif %}>
     <label class="form-check-label" for="require_answer_check">QR＋正解入力を必須にする</label>
   </div>
+  <div class="mb-3"><label class="form-label">スタンプカード台紙画像（任意）</label><input class="form-control" type="file" name="stamp_card_background_image" accept="image/png,image/jpeg"></div>
   <button class="btn btn-primary" type="submit">保存</button>
 </form>
 {% endblock %}

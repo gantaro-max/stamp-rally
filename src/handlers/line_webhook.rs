@@ -217,6 +217,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
             "qr-room-a",
         )
         .await

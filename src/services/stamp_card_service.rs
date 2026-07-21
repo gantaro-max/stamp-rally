@@ -39,6 +39,7 @@ const INNER_RING_INNER_RADIUS: i32 = 33;
 
 const EMPTY_RING_OUTER_RADIUS: i32 = 43;
 const EMPTY_RING_INNER_RADIUS: i32 = 41;
+const BOLD_OFFSETS: [(i32, i32); 5] = [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)];
 
 pub fn render_png(room_names: &[String], total_rooms: i64) -> Vec<u8> {
     let total_rooms = total_rooms.max(1) as i32;
@@ -86,10 +87,25 @@ fn draw_card_frame(image: &mut RgbaImage, width: u32, height: u32) {
 }
 
 fn draw_card_title(image: &mut RgbaImage, width: u32) {
-    let scale = PxScale::from(28.0);
+    let scale = PxScale::from(30.0);
     let approx_width = CARD_TITLE.chars().count() as i32 * scale.x as i32;
     let x = (width as i32 - approx_width) / 2;
-    draw_text_mut(image, CARD_BORDER_COLOR, x, 16, scale, &*FONT, CARD_TITLE);
+    draw_bold_text_mut(image, CARD_BORDER_COLOR, x, 16, scale, &FONT, CARD_TITLE);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_bold_text_mut(
+    image: &mut RgbaImage,
+    color: Rgba<u8>,
+    x: i32,
+    y: i32,
+    scale: PxScale,
+    font: &FontRef<'_>,
+    text: &str,
+) {
+    for (dx, dy) in BOLD_OFFSETS {
+        draw_text_mut(image, color, x + dx, y + dy, scale, font, text);
+    }
 }
 
 fn draw_empty_ring(image: &mut RgbaImage, center_x: i32, center_y: i32) {
@@ -116,18 +132,18 @@ fn draw_stamp(image: &mut RgbaImage, center_x: i32, center_y: i32, name: &str) {
 
     let label = truncate_room_name(name);
     let lines = split_stamp_label_lines(&label);
-    let scale = PxScale::from(20.0);
+    let scale = PxScale::from(22.0);
     let line_height = 22;
     let start_y = buffer_center - (lines.len() as i32 * line_height) / 2;
     for (idx, line) in lines.iter().enumerate() {
         let approx_width = line.chars().count() as i32 * scale.x as i32;
-        draw_text_mut(
+        draw_bold_text_mut(
             &mut buffer,
             STAMP_COLOR,
             buffer_center - approx_width / 2,
             start_y + idx as i32 * line_height,
             scale,
-            &*FONT,
+            &FONT,
             line,
         );
     }

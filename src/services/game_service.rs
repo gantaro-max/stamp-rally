@@ -503,6 +503,8 @@ mod tests {
             answer,
             hint,
             None,
+            None,
+            None,
             &format!("qr-{name}"),
         )
         .await
@@ -1125,6 +1127,8 @@ mod tests {
             &format!("Quest for {name}"),
             Some("red"),
             Some("hint"),
+            None,
+            None,
             None,
             qr_uuid,
         )
