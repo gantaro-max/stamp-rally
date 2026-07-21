@@ -190,13 +190,20 @@ pub async fn find_by_qr_uuid(pool: &MySqlPool, qr_uuid: &str) -> Result<Option<R
     }))
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct VisitedRoomStamp {
+    pub room_name: String,
+    pub stamp_label: Option<String>,
+    pub stamp_image_id: Option<i32>,
+}
+
 pub async fn find_visited_room_names_ordered(
     pool: &MySqlPool,
     player_id: i32,
-) -> Result<Vec<String>, sqlx::Error> {
+) -> Result<Vec<VisitedRoomStamp>, sqlx::Error> {
     let rows = sqlx::query(
         r#"
-        SELECT rooms.room_name AS room_name
+        SELECT rooms.room_name AS room_name, rooms.stamp_label AS stamp_label, rooms.stamp_image_id AS stamp_image_id
         FROM visited_rooms
         JOIN rooms ON rooms.id = visited_rooms.room_id
         WHERE visited_rooms.player_id = ?
@@ -207,7 +214,15 @@ pub async fn find_visited_room_names_ordered(
     .fetch_all(pool)
     .await?;
 
-    rows.iter().map(|row| row.try_get("room_name")).collect()
+    rows.iter()
+        .map(|row| {
+            Ok(VisitedRoomStamp {
+                room_name: row.try_get("room_name")?,
+                stamp_label: row.try_get("stamp_label")?,
+                stamp_image_id: row.try_get("stamp_image_id")?,
+            })
+        })
+        .collect()
 }
 
 pub async fn find_random_unvisited(

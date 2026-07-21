@@ -10,9 +10,17 @@ use axum::{
     routing::{get, post},
 };
 use sqlx::{MySqlPool, mysql::MySqlPoolOptions};
-use std::{env, net::SocketAddr, process, sync::Arc};
+use std::{
+    collections::HashMap,
+    env,
+    net::SocketAddr,
+    process,
+    sync::{Arc, RwLock},
+};
 use time::Duration;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
+
+pub type StampImageCache = Arc<RwLock<HashMap<i32, Arc<image::DynamicImage>>>>;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -25,6 +33,7 @@ pub struct AppState {
     pub line_add_friend_url: Option<Arc<str>>,
     pub verify_id_tokens: bool,
     pub http_client: reqwest::Client,
+    pub stamp_image_cache: StampImageCache,
     pub send_line_replies: bool,
     pub spawn_background_tasks: bool,
 }
@@ -52,6 +61,7 @@ impl AppState {
                 .timeout(std::time::Duration::from_secs(10))
                 .build()
                 .expect("failed to build reqwest client"),
+            stamp_image_cache: Arc::new(RwLock::new(HashMap::new())),
             send_line_replies: true,
             spawn_background_tasks: true,
         }

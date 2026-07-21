@@ -42,6 +42,21 @@ pub async fn find_uuid_by_id(pool: &MySqlPool, id: i32) -> Result<Option<String>
     Ok(Some(row.try_get("uuid")?))
 }
 
+pub async fn find_by_id(
+    pool: &MySqlPool,
+    id: i32,
+) -> Result<Option<(Vec<u8>, String)>, sqlx::Error> {
+    let Some(row) = sqlx::query("SELECT data, mime_type FROM room_images WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some((row.try_get("data")?, row.try_get("mime_type")?)))
+}
+
 pub async fn find_by_uuid(
     pool: &MySqlPool,
     uuid: &str,

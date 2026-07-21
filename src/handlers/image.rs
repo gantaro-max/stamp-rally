@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use axum::{
     extract::{Path, State},
     http::{StatusCode, header},
@@ -5,7 +7,7 @@ use axum::{
 };
 use sqlx::MySqlPool;
 
-use crate::repository::room_image_repository;
+use crate::{AppState, StampImageCache, repository::room_image_repository};
 
 pub async fn serve(State(pool): State<MySqlPool>, Path(uuid): Path<String>) -> impl IntoResponse {
     match room_image_repository::find_by_uuid(&pool, &uuid).await {
@@ -19,26 +21,31 @@ pub async fn serve(State(pool): State<MySqlPool>, Path(uuid): Path<String>) -> i
 }
 
 pub async fn stamp_card(
-    State(pool): State<MySqlPool>,
+    State(state): State<AppState>,
     Path(token): Path<String>,
 ) -> impl IntoResponse {
-    use crate::repository::{player_repository, room_repository};
+    use crate::repository::{event_repository, player_repository, room_repository};
     use crate::services::game_service::{self, GameServiceError};
+    use crate::services::stamp_card_service::StampCell;
 
-    let result: Result<Option<(Vec<String>, i64)>, GameServiceError> =
-        game_service::with_db_call_timeout(async {
-            let Some(player) = player_repository::find_by_stamp_card_token(&pool, &token).await?
-            else {
-                return Ok(None);
-            };
-            let room_names =
-                room_repository::find_visited_room_names_ordered(&pool, player.id).await?;
-            let total_rooms = room_repository::count(&pool, player.event_id).await?;
-            Ok(Some((room_names, total_rooms)))
-        })
-        .await;
+    let pool = &state.pool;
 
-    let (room_names, total_rooms) = match result {
+    let result: Result<
+        Option<(Vec<room_repository::VisitedRoomStamp>, i64, Option<i32>)>,
+        GameServiceError,
+    > = game_service::with_db_call_timeout(async {
+        let Some(player) = player_repository::find_by_stamp_card_token(pool, &token).await? else {
+            return Ok(None);
+        };
+        let visited = room_repository::find_visited_room_names_ordered(pool, player.id).await?;
+        let total_rooms = room_repository::count(pool, player.event_id).await?;
+        let event = event_repository::find_singleton(pool).await?;
+        let background_image_id = event.and_then(|event| event.stamp_card_background_image_id);
+        Ok(Some((visited, total_rooms, background_image_id)))
+    })
+    .await;
+
+    let (visited, total_rooms, background_image_id) = match result {
         Ok(Some(data)) => data,
         Ok(None) => return StatusCode::NOT_FOUND.into_response(),
         Err(err) => {
@@ -47,7 +54,43 @@ pub async fn stamp_card(
         }
     };
 
-    let png = crate::services::stamp_card_service::render_png(&room_names, total_rooms);
+    let mut stamps = Vec::with_capacity(visited.len());
+    for room in visited {
+        let custom_image = match room.stamp_image_id {
+            Some(image_id) => {
+                match load_cached_image(pool, &state.stamp_image_cache, image_id).await {
+                    Ok(image) => image,
+                    Err(err) => {
+                        tracing::error!(?err, "failed to load stamp image");
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+                }
+            }
+            None => None,
+        };
+        let label = room.stamp_label.unwrap_or(room.room_name);
+        stamps.push(StampCell {
+            label,
+            custom_image,
+        });
+    }
+
+    let card_background = match background_image_id {
+        Some(image_id) => match load_cached_image(pool, &state.stamp_image_cache, image_id).await {
+            Ok(image) => image,
+            Err(err) => {
+                tracing::error!(?err, "failed to load stamp card background image");
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+        },
+        None => None,
+    };
+
+    let png = crate::services::stamp_card_service::render_png(
+        &stamps,
+        total_rooms,
+        card_background.as_deref(),
+    );
 
     (
         [
@@ -57,6 +100,31 @@ pub async fn stamp_card(
         png,
     )
         .into_response()
+}
+
+async fn load_cached_image(
+    pool: &MySqlPool,
+    cache: &StampImageCache,
+    image_id: i32,
+) -> Result<Option<Arc<image::DynamicImage>>, sqlx::Error> {
+    if let Some(cached) = cache
+        .read()
+        .expect("cache lock poisoned")
+        .get(&image_id)
+        .cloned()
+    {
+        return Ok(Some(cached));
+    }
+
+    let Some((data, _mime_type)) = room_image_repository::find_by_id(pool, image_id).await? else {
+        return Ok(None);
+    };
+    let decoded = Arc::new(image::load_from_memory(&data).expect("stored image should decode"));
+    cache
+        .write()
+        .expect("cache lock poisoned")
+        .insert(image_id, decoded.clone());
+    Ok(Some(decoded))
 }
 
 #[cfg(test)]

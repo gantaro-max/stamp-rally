@@ -1,8 +1,8 @@
 use std::io::Cursor;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use ab_glyph::{FontRef, PxScale};
-use image::{ImageBuffer, Rgba, RgbaImage};
+use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_text_mut};
 use imageproc::geometric_transformations::{Interpolation, rotate_about_center};
 use imageproc::rect::Rect;
@@ -39,15 +39,30 @@ const INNER_RING_INNER_RADIUS: i32 = 33;
 
 const EMPTY_RING_OUTER_RADIUS: i32 = 43;
 const EMPTY_RING_INNER_RADIUS: i32 = 41;
+const CUSTOM_STAMP_RADIUS: i32 = 42;
 const BOLD_OFFSETS: [(i32, i32); 5] = [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)];
 
-pub fn render_png(room_names: &[String], total_rooms: i64) -> Vec<u8> {
+pub struct StampCell {
+    pub label: String,
+    pub custom_image: Option<Arc<DynamicImage>>,
+}
+
+pub fn render_png(
+    stamps: &[StampCell],
+    total_rooms: i64,
+    card_background: Option<&DynamicImage>,
+) -> Vec<u8> {
     let total_rooms = total_rooms.max(1) as i32;
     let rows = (total_rooms + COLUMNS - 1) / COLUMNS;
     let width = (COLUMNS * CELL_WIDTH + PADDING * 2) as u32;
     let height = (TITLE_AREA_HEIGHT + rows * CELL_HEIGHT + PADDING * 2) as u32;
 
-    let mut image: RgbaImage = ImageBuffer::from_pixel(width, height, CARD_BACKGROUND);
+    let mut image: RgbaImage = match card_background {
+        Some(background) => background
+            .resize_to_fill(width, height, image::imageops::FilterType::Lanczos3)
+            .to_rgba8(),
+        None => ImageBuffer::from_pixel(width, height, CARD_BACKGROUND),
+    };
 
     draw_card_frame(&mut image, width, height);
     draw_card_title(&mut image, width);
@@ -58,8 +73,12 @@ pub fn render_png(room_names: &[String], total_rooms: i64) -> Vec<u8> {
         let center_x = PADDING + col * CELL_WIDTH + CELL_WIDTH / 2;
         let center_y = TITLE_AREA_HEIGHT + PADDING + row * CELL_HEIGHT + CELL_HEIGHT / 2;
 
-        match room_names.get(i as usize) {
-            Some(name) => draw_stamp(&mut image, center_x, center_y, name),
+        match stamps.get(i as usize) {
+            Some(StampCell {
+                custom_image: Some(custom),
+                ..
+            }) => draw_custom_stamp(&mut image, center_x, center_y, custom),
+            Some(StampCell { label, .. }) => draw_stamp(&mut image, center_x, center_y, label),
             None => draw_empty_ring(&mut image, center_x, center_y),
         }
     }
@@ -69,6 +88,28 @@ pub fn render_png(room_names: &[String], total_rooms: i64) -> Vec<u8> {
         .write_to(&mut output, image::ImageFormat::Png)
         .expect("PNG encoding should not fail");
     output.into_inner()
+}
+
+fn draw_custom_stamp(image: &mut RgbaImage, center_x: i32, center_y: i32, custom: &DynamicImage) {
+    let diameter = (CUSTOM_STAMP_RADIUS * 2) as u32;
+    let mut cropped = custom
+        .resize_to_fill(diameter, diameter, image::imageops::FilterType::Lanczos3)
+        .to_rgba8();
+
+    let center = CUSTOM_STAMP_RADIUS;
+    for y in 0..diameter as i32 {
+        for x in 0..diameter as i32 {
+            let dx = x - center;
+            let dy = y - center;
+            if dx * dx + dy * dy > CUSTOM_STAMP_RADIUS * CUSTOM_STAMP_RADIUS {
+                cropped.put_pixel(x as u32, y as u32, TRANSPARENT);
+            }
+        }
+    }
+
+    let offset_x = (center_x - CUSTOM_STAMP_RADIUS) as i64;
+    let offset_y = (center_y - CUSTOM_STAMP_RADIUS) as i64;
+    image::imageops::overlay(image, &cropped, offset_x, offset_y);
 }
 
 fn draw_card_frame(image: &mut RgbaImage, width: u32, height: u32) {
