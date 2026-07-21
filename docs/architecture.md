@@ -15,6 +15,7 @@
 | パスワードハッシュ | Argon2 |
 | 画像処理 | `image` crate（リサイズ） |
 | QRコード生成 | `qrcode` crate（部屋ごとのQR画像を生成） |
+| スタンプカード画像生成 | `image` + `imageproc` + `ab_glyph`（部屋名テキストを焼き込んだPNGを動的生成。同梱フォントはNoto Sans JP、23節） |
 | ビルド | Cargo |
 | ホスティング | Koyeb（詳細は18節） |
 
@@ -64,6 +65,7 @@ Handler(Axum) → Service → Repository（sqlx） → DB
 | `csrf_service` | セッション格納トークンによるCSRFダブルサブミット検証（発行・検証） |
 | `image_service` | アップロード画像のマジックバイト検証・サイズ/寸法上限チェック・JPEG再エンコード |
 | `qr_service` | 部屋UUIDからQRコードPNGを生成 |
+| `stamp_card_service` | 訪問済み部屋名（訪問順）・総部屋数からスタンプカードPNGを生成（23節） |
 
 ### 認証方式
 
@@ -294,11 +296,12 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 6. `ヒント` →
    - `event.require_answer_check = true` → 現在の部屋の `hint_msg` を返信（NULLなら「ヒントは登録されていません」）
    - `false` → 「このイベントではヒント機能は利用できません」
-7. 上記のどれにも該当しないテキスト（`player` が存在し、未クリアで、コマンドでもない自由入力） →
+7. `スタンプ状況` → 現在の訪問済み部屋数・総部屋数からスタンプカード画像（23節）を生成し、画像メッセージとして返信する（`event.require_answer_check` の値によらず常に利用できる。未クリアの登録済みプレイヤーのみ到達する分岐であり、5で`finished_at`済みは既に処理済みのため、クリア後はこのコマンドに到達しない）
+8. 上記のどれにも該当しないテキスト（`player` が存在し、未クリアで、コマンドでもない自由入力） →
    - `event.require_answer_check = false` → 「QRコードを読み込んでください」の案内を返信（正誤判定は行わない）
    - `event.require_answer_check = true` かつ `answer_verified = false` → 正誤判定（12節）
    - `event.require_answer_check = true` かつ `answer_verified = true`（既に正解済みでQR待ち） → 「QRコードを読み込んでください」の案内を再送
-8. `player` が存在せず、登録待ちでもなく、上記のどのコマンドにも該当しない → 「『開始』と送信して参加登録してください」と案内
+9. `player` が存在せず、登録待ちでもなく、上記のどのコマンドにも該当しない → 「『開始』と送信して参加登録してください」と案内
 
 ### 11. 部屋のランダム割当
 
@@ -332,6 +335,9 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
   | QRチェックイン成功後、次の部屋を案内するとき | 【（直前にクリアした部屋名）】クリアおめでとうございます。次の部屋は |
   | 「開始」再送信時、案内済みの現在の部屋を再送するとき（案内を見失った参加者向けの救済） | 現在向かっている部屋は |
   - `hero`（画像がある場合）・`footer`（QRを読むボタン）は既存の構成を維持する
+- クエスト通知には、スタンプカード画像（23節）を**2通目のメッセージ**として続けて送る（`ReplyMessage::Quest`に`stamp_card_url: String`フィールドを追加。`game_service`が`quest_reply_for_room`呼び出し時に組み立てる）。1通のFlex Message内の`hero`を差し替えるのではなく別メッセージにする理由は、`hero`は部屋の写真（任意）の表示に既に使っており、両方を同時に見せる欲張ったレイアウトにするより、LINE Messaging APIの`messages`配列（reply/pushとも1リクエストにつき最大5件まで指定可能）でシンプルに2通に分けた方が実装・表示のどちらも単純だから
+- 上記の変更にともない、`line_client::to_line_message(reply, liff_id) -> Value`（単一メッセージを返す）は`to_line_messages(reply, liff_id) -> Vec<Value>`に置き換える。`ReplyMessage::Quest`は`[クエストFlex Message, スタンプカード画像メッセージ]`の2件、それ以外の`ReplyMessage`バリアントは従来通り1件を返す
+- `send_reply`・`push_message`は、上記の変更にともない引数を`message: Value`から`messages: Vec<Value>`に変更し、`{"replyToken"/"to": ..., "messages": messages}`とする（呼び出し側で`Vec`をそのまま渡すだけでよく、関数側でラップし直さない）
 - クリア（15節、`CheckinOutcome::Cleared`）時のメッセージも、従来の平文テキストから専用のFlex Messageに変更する:
   - `CheckinOutcome::Cleared` は `ReplyMessage::Cleared { elapsed: String }` を保持するようになる（`NextQuest(ReplyMessage)` と同じ形に揃える）。`elapsed` は `players.finished_at - players.started_at` を `ranking_service::format_elapsed`（既存のランキング画面向け経過時間フォーマット関数。`M:SS` / `H:MM:SS`）で整形した文字列で、`finished_at` はDBの`NOW()`を待たず、`mark_finished` 呼び出し時点のアプリ側時刻（`chrono::Utc::now()`）から計算してよい（クリア演出用の表示にとどまり、ランキング画面自体はDBの`finished_at`をそのまま使うため、数百ミリ秒程度の差異は実害がない）
   - `header`: 背景色 `#FFC107`（黄）のboxに、白文字・太字・中央寄せ・サイズ`xl`で「🎉 クリア！」を表示する
@@ -429,8 +435,8 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 ### ビルド方式: 本番専用Dockerfile（マルチステージビルド）
 
 - `.devcontainer/Dockerfile` はVS Code Dev Containers向け（`sqlx-cli`・clippy等を含む開発用の大きめイメージ）であり、本番デプロイには使わない。Koyebの無料枠インスタンス（リソース制約がある）に適したイメージにするため、リポジトリルートに**本番専用の`Dockerfile`**をマルチステージビルドで実装済み（#12）
-  - ビルドステージ: `rust:1-bookworm`で`cargo build --release --locked`（`--locked`は`Cargo.lock`との不整合による意図しない依存関係更新を防止する。`SECURITY.md`「依存関係・再現性」の方針に対応）
-  - 実行ステージ: `debian:bookworm-slim`に、ビルドステージで生成したバイナリと`ca-certificates`（`reqwest`のTLS通信に必要）のみをコピーする。ソースコード・`target/`の中間成果物は実行イメージに含めない。非rootユーザー（`appuser`）でアプリケーションを起動する（多層防御）
+  - ビルドステージ: `rust:1-bookworm`で`cargo build --release --locked`（`--locked`は`Cargo.lock`との不整合による意図しない依存関係更新を防止する。`SECURITY.md`「依存関係・再現性」の方針に対応）。`assets/fonts/`（スタンプカード用フォント、23節）はビルドステージでのみ必要（`include_bytes!`でバイナリに埋め込まれる）ため、`COPY assets ./assets`をビルドステージに追加する
+  - 実行ステージ: `debian:bookworm-slim`に、ビルドステージで生成したバイナリと`ca-certificates`（`reqwest`のTLS通信に必要）のみをコピーする。ソースコード・`target/`の中間成果物・`assets/`は実行イメージに含めない（フォントはバイナリに埋め込み済みのため実行時に別途必要ない）。非rootユーザー（`appuser`）でアプリケーションを起動する（多層防御）
 - Koyebの当該Webサービスに、このDockerfileを使ってビルド・デプロイするよう設定する（Koyebのgit連携でリポジトリを指定し、Dockerfileベースのビルドを選択する）
 - ヘルスチェックパス: `/health`（Koyebのヘルスチェックに登録。認証不要・DB非依存のエンドポイントなので疎通確認に適する）
 
@@ -581,5 +587,56 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
 - `AppState.line_add_friend_url`が`None`の場合は404を返す
 - `Some(url)`の場合、`qr_service::render_png(&url)`の結果を`Content-Type: image/png`で返す（`handlers::rooms::qr`と同じレスポンスの組み立て方）
 - 状態変更を伴わないためCSRF保護は不要
+
+---
+
+## 23. スタンプ状況（スタンプカード画像）
+
+本番運用フィードバックで、参加者が「今何個スタンプを集めたか」をLINE上で確認する手段が無いとの指摘があった。訪問済み部屋数に応じてスタンプが押された見た目のカード画像を、(a) 次のクエスト案内にあわせて自動的に送る、(b) 「スタンプ状況」コマンドでいつでも参照できる、の2通りで提供する（10節7.・13節）。押されるスタンプには、その部屋の**部屋名を実際に画像として焼き込む**（要望により、達成数のみの汎用カードから変更）。
+
+### 設計方針
+
+- 部屋はランダム割当のため、訪問順にマスを埋めていく（1番目に訪れた部屋の名前が1マス目、2番目が2マス目、…）。未訪問のマスはどの部屋が入るか分からないため、名前を出さず空の枠のみ表示する
+- 部屋名は管理者が自由入力する日本語テキスト（`rooms.room_name`、常用外の漢字を含みうる）のため、画像に焼き込むには日本語フォントを同梱した文字描画が必要になる。`image` crateだけでは文字描画ができないため、`imageproc`・`ab_glyph`を新規に依存として追加し、Noto Sans JP（SIL OFL 1.1）の静的ウェイト（Bold、1ファイル）をリポジトリに同梱して`include_bytes!`でバイナリに埋め込む（詳細は実装指示書 `instructions/stamp-status.md` を参照。フォントはビルド時にバイナリへ埋め込まれるだけなので、本番の実行イメージ（`debian:bookworm-slim`、18節）のサイズには影響しない）
+- 「どのマスにどの部屋の名前が入るか」はプレイヤーごとに異なる（訪問順が個々に異なるため）。そのため画像生成にはそのプレイヤーの訪問履歴（DBアクセス）が必要になり、22節までの「保存せずその場でPNG生成する」という方針自体は維持しつつも、**画像生成エンドポイントはDBアクセスを伴う**（部屋QR・友だち追加QRとはこの点で異なる）
+- LINEのサーバーが画像メッセージの`originalContentUrl`を直接フェッチするため、このエンドポイントは認証不要のまま維持する必要がある。一方でプレイヤーのDB行（`line_user_id`を含む）に対応するURLを未認証で公開するため、`players.id`（連番の推測可能なID）をそのままURLに使わず、`rooms.qr_uuid`・`room_images.uuid`と同じ「推測不可能なUUIDを公開識別子として発行する」パターンを踏襲する。新規カラム`players.stamp_card_token`（UUID v4、ユニーク制約）を追加し、プレイヤー登録時に発行する
+
+### DB変更: `players.stamp_card_token`
+
+- マイグレーション`migrations/0003_players_stamp_card_token.sql`で`players`に`stamp_card_token VARCHAR(36) NULL`・ユニーク制約`uq_players_stamp_card_token`を追加する（既存行がある場合を考慮しNULL許容のカラムとして追加するが、アプリケーションは`player_repository::insert`時に必ず値を設定するため、実質的に「登録済みプレイヤーは必ず持つ」値になる）
+- `player_repository::insert`は新たに`stamp_card_token: &str`を引数に取る（呼び出し元の`game_service`が`Uuid::new_v4().to_string()`で発行して渡す。`rooms.qr_uuid`を`room_service`が発行して`room_repository::insert`に渡す既存パターン、5節と同じ形）
+- `docs/database.md`の`players`テーブル定義にもこのカラムを反映する
+
+### `stamp_card_service::render_png`
+
+- シグネチャ: `pub fn render_png(room_names: &[String], total_rooms: i64) -> Vec<u8>`（`room_names`は訪問順の部屋名の配列、`total_rooms`はそのイベントの登録済み部屋数）
+- レイアウト: 3列のグリッド（部屋名のテキストを収めるため、円形のマス目より横幅の広い矩形にする）。1マス幅160px・高さ100px、外周に20pxの余白。行数は`total_rooms`を3列で割った切り上げ
+- 各マス（0始まりのインデックス`i`）:
+  - `i < room_names.len()`（スタンプ済み）→ 塗りつぶした角丸なしの矩形（管理画面デザインシステム、20節の`--admin-primary` `#B54B3A`）の上に、白文字で部屋名を描画する。長い部屋名は6文字を超える場合5文字+「…」に切り詰める（欄からのはみ出し防止。ピクセル単位の幅計測はせず、文字数ベースの単純な切り詰めでよい）
+  - `i >= room_names.len()`（未スタンプ）→ 輪郭のみの矩形（`--admin-border` `#E2E4E9`）を描画する。文字は描画しない
+- `total_rooms`が0以下の値で呼ばれることは`game_service`側の呼び出し経路（登録イベントには必ず1部屋以上ある前提、7節）では起こらないが、念のため`total_rooms.max(1)`として扱い、0除算を起こさないようにする
+- 具体的な描画ロジック（フォントの埋め込み方・座標計算）は実装指示書（`instructions/stamp-status.md`）側で提示するコード例を参照
+
+### `GET /public/stamp-card/{token}`
+
+- `handlers::image`（画像配信ハンドラーと同じファイル）に追加する。既存の`GET /public/image/{uuid}`と同様、認証不要
+- `token`（`players.stamp_card_token`）に一致するプレイヤーが存在しなければ404を返す（`/public/image/{uuid}`が該当UUID無しで404を返すのと同じパターン）
+- 存在すれば、そのプレイヤーの訪問済み部屋名（`visited_rooms`を`visited_at`昇順で`rooms`と結合、新規`room_repository::find_visited_room_names_ordered`）と、そのイベントの登録済み部屋数（`room_repository::count`）を取得し、`stamp_card_service::render_png(&room_names, total_rooms)`の結果を`Content-Type: image/png`で返す
+- **DBアクセス（トークン検索・訪問済み部屋名取得・部屋数取得の3クエリ）は`game_service::with_db_call_timeout`（21節）でラップする。** このエンドポイントは部屋案内・「スタンプ状況」コマンドのたびにLINE側から取得される未認証の公開エンドポイントであり、`/callback`・`/liff/checkin`と同様に高頻度・未認証な経路である。21節が防ごうとしたのと同じ障害（DBコネクションが無応答のまま滞留しプールが枯渇、他の参加者の処理まで巻き込む）が起こりうるため、他の2エンドポイントと同じ保護を適用する
+- スタンプカードのフォント（`FontRef::try_from_slice`によるパース）はリクエストのたびに行わず、プロセス起動後に1回だけ行い使い回す（`stamp_card_service`内で`static`として保持する）。フォントは約5〜6MBあり、毎リクエストでの再パースは無視できないCPUコストになるため
+- レスポンスに`Cache-Control: private, max-age=60`を付与する（必須ではないが、同一プレイヤーが短時間に「スタンプ状況」を連打した場合の重複描画を軽減する）
+
+### `ReplyMessage`・`line_client`側の変更
+
+- `ReplyMessage::Quest`に`stamp_card_url: String`を追加する。`stamp_card_url`は`quest_reply_for_room`（13節）が`public_base_url`とそのプレイヤーの`stamp_card_token`から組み立てる絶対URL（`/public/image/{uuid}`の組み立てと同じ形）
+- 新規バリアント`ReplyMessage::StampStatus { image_url: String }`を追加する（「スタンプ状況」コマンド専用。Flex Messageではなく単純な画像メッセージ1通のみを返す）
+- `line_client::build_stamp_status_image_message(url: &str) -> Value`を追加し、LINEの画像メッセージ（`{"type": "image", "originalContentUrl": ..., "previewImageUrl": ...}`。両方とも同じURLでよい）を組み立てる
+- `to_line_messages`（13節で`to_line_message`から改名）は、`ReplyMessage::Quest`のとき`[クエストFlex Message, スタンプカード画像メッセージ]`、`ReplyMessage::StampStatus`のとき`[スタンプカード画像メッセージ]`を返す
+
+### 対象外
+
+- `CheckinOutcome::Cleared`（全部屋クリア時）のメッセージにはスタンプカードを追加しない。クリア専用のFlex Message（13節）が既に「全部屋制覇」を表現しており、スタンプカードを重ねて送る要件は無い
+- カードの見た目（マスの配置・色・フォント）を管理者が設定できるようにする機能は今回のスコープ外
+- 部屋名がマスの幅に収まりきらない場合の高度な処理（自動縮小・折り返し等）は行わない。文字数ベースの単純な切り詰めのみとする
 
 ---

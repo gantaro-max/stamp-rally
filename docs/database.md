@@ -62,8 +62,9 @@ DB: MySQL 8.0（ローカル） / TiDB Serverless（本番）
 | `answer_verified` | BOOLEAN | 現在の部屋で正解済みか（`require_answer_check = true` のイベントでのみ使用。部屋が変わるたびに `false` にリセット） |
 | `started_at` | DATETIME | 参加登録日時 |
 | `finished_at` | DATETIME(NULL可) | 全15部屋クリア日時（未クリアはNULL） |
+| `stamp_card_token` | VARCHAR(36, NULL可) | スタンプカード画像（`/public/stamp-card/{token}`）公開用の一意なUUID。登録時に発行（[architecture.md 23節](architecture.md#23-スタンプ状況スタンプカード画像)） |
 
-ユニーク制約: `(line_user_id, event_id)`（`uq_players_line_user_event`）
+ユニーク制約: `(line_user_id, event_id)`（`uq_players_line_user_event`）、`stamp_card_token`（`uq_players_stamp_card_token`）
 インデックス: `event_id`（`idx_players_event_id`）、`current_room_id`（`idx_players_current_room_id`）
 
 ---
