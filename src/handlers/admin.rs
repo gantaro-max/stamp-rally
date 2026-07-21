@@ -9,7 +9,8 @@ use serde::Deserialize;
 use sqlx::MySqlPool;
 use tower_sessions::Session;
 
-use crate::services::{csrf_service, event_service, ranking_service, room_service};
+use crate::AppState;
+use crate::services::{csrf_service, event_service, qr_service, ranking_service, room_service};
 
 #[derive(Template)]
 #[template(path = "admin/dashboard.html")]
@@ -18,18 +19,19 @@ struct DashboardTemplate {
     is_team_mode: bool,
     require_answer_check: bool,
     room_count: usize,
+    line_add_friend_url: Option<String>,
 }
 
-pub async fn dashboard(session: Session, State(pool): State<MySqlPool>) -> Response {
+pub async fn dashboard(session: Session, State(state): State<AppState>) -> Response {
     let csrf_token = match csrf_service::issue_token(&session).await {
         Ok(token) => token,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    let event = match event_service::current(&pool).await {
+    let event = match event_service::current(&state.pool).await {
         Ok(event) => event,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    let rooms = match room_service::list(&pool, event.id).await {
+    let rooms = match room_service::list(&state.pool, event.id).await {
         Ok(rooms) => rooms,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
@@ -38,12 +40,22 @@ pub async fn dashboard(session: Session, State(pool): State<MySqlPool>) -> Respo
         is_team_mode: event.is_team_mode,
         require_answer_check: event.require_answer_check,
         room_count: rooms.len(),
+        line_add_friend_url: state.line_add_friend_url.as_deref().map(str::to_owned),
     };
 
     match template.render() {
         Ok(body) => Html(body).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+pub async fn line_qr(State(state): State<AppState>) -> Response {
+    let Some(url) = state.line_add_friend_url.as_deref() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let png = qr_service::render_png(url);
+
+    ([(header::CONTENT_TYPE, "image/png")], png).into_response()
 }
 
 #[derive(Template)]

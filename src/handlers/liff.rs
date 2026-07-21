@@ -225,6 +225,7 @@ mod tests {
             PUBLIC_BASE_URL,
             "test-liff-id",
             "test-login-channel-id",
+            None,
         );
         state.verify_id_tokens = false;
         state.send_line_replies = false;

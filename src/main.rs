@@ -22,6 +22,7 @@ pub struct AppState {
     pub public_base_url: Arc<str>,
     pub liff_id: Arc<str>,
     pub line_login_channel_id: Arc<str>,
+    pub line_add_friend_url: Option<Arc<str>>,
     pub verify_id_tokens: bool,
     pub http_client: reqwest::Client,
     pub send_line_replies: bool,
@@ -36,6 +37,7 @@ impl AppState {
         public_base_url: impl Into<Arc<str>>,
         liff_id: impl Into<Arc<str>>,
         line_login_channel_id: impl Into<Arc<str>>,
+        line_add_friend_url: Option<String>,
     ) -> Self {
         Self {
             pool,
@@ -44,6 +46,7 @@ impl AppState {
             public_base_url: public_base_url.into(),
             liff_id: liff_id.into(),
             line_login_channel_id: line_login_channel_id.into(),
+            line_add_friend_url: line_add_friend_url.map(Into::into),
             verify_id_tokens: true,
             http_client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
@@ -68,6 +71,13 @@ fn resolve_port(value: Option<&str>) -> u16 {
     value
         .and_then(|value| value.parse().ok())
         .unwrap_or(DEFAULT_PORT)
+}
+
+fn resolve_line_add_friend_url(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
 #[tokio::main]
@@ -102,6 +112,8 @@ async fn main() {
         eprintln!("LINE_LOGIN_CHANNEL_ID must be set: {err}");
         process::exit(1);
     });
+    let line_add_friend_url =
+        resolve_line_add_friend_url(env::var("LINE_ADD_FRIEND_URL").ok().as_deref());
 
     let pool = MySqlPoolOptions::new()
         .connect(&database_url)
@@ -120,6 +132,7 @@ async fn main() {
         public_base_url,
         liff_id,
         line_login_channel_id,
+        line_add_friend_url,
     ));
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
@@ -174,6 +187,7 @@ fn app_router(pool: MySqlPool) -> Router {
         "https://example.test",
         "test-liff-id",
         "test-login-channel-id",
+        None,
     ))
 }
 
@@ -183,6 +197,7 @@ fn app_router_with_state(state: AppState) -> Router {
 
     let admin_router = Router::new()
         .route("/dashboard", get(handlers::admin::dashboard))
+        .route("/line-qr", get(handlers::admin::line_qr))
         .route(
             "/settings",
             get(handlers::admin::settings_form).post(handlers::admin::update_settings),
@@ -626,7 +641,6 @@ mod tests {
         assert!(body.contains(r#"href="/admin/ranking""#));
     }
 
-
     #[sqlx::test]
     async fn authenticated_dashboard_without_line_add_friend_url_shows_setup_message(
         pool: sqlx::MySqlPool,
@@ -670,10 +684,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let app = app_router_with_line_add_friend_url(
-            pool,
-            Some("https://lin.ee/test1234".to_string()),
-        );
+        let app =
+            app_router_with_line_add_friend_url(pool, Some("https://lin.ee/test1234".to_string()));
         let session_cookie = login_as_admin(app.clone()).await;
 
         let response = app
@@ -703,10 +715,8 @@ mod tests {
         )
         .await
         .unwrap();
-        let app = app_router_with_line_add_friend_url(
-            pool,
-            Some("https://lin.ee/test1234".to_string()),
-        );
+        let app =
+            app_router_with_line_add_friend_url(pool, Some("https://lin.ee/test1234".to_string()));
         let session_cookie = login_as_admin(app.clone()).await;
 
         let response = app
