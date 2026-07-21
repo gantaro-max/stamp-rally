@@ -28,22 +28,23 @@ pub async fn stamp_card(
     use crate::services::game_service::{self, GameServiceError};
     use crate::services::stamp_card_service::StampCell;
 
+    type StampCardData = (Vec<room_repository::VisitedRoomStamp>, i64, Option<i32>);
+
     let pool = &state.pool;
 
-    let result: Result<
-        Option<(Vec<room_repository::VisitedRoomStamp>, i64, Option<i32>)>,
-        GameServiceError,
-    > = game_service::with_db_call_timeout(async {
-        let Some(player) = player_repository::find_by_stamp_card_token(pool, &token).await? else {
-            return Ok(None);
-        };
-        let visited = room_repository::find_visited_room_names_ordered(pool, player.id).await?;
-        let total_rooms = room_repository::count(pool, player.event_id).await?;
-        let event = event_repository::find_singleton(pool).await?;
-        let background_image_id = event.and_then(|event| event.stamp_card_background_image_id);
-        Ok(Some((visited, total_rooms, background_image_id)))
-    })
-    .await;
+    let result: Result<Option<StampCardData>, GameServiceError> =
+        game_service::with_db_call_timeout(async {
+            let Some(player) = player_repository::find_by_stamp_card_token(pool, &token).await?
+            else {
+                return Ok(None);
+            };
+            let visited = room_repository::find_visited_room_names_ordered(pool, player.id).await?;
+            let total_rooms = room_repository::count(pool, player.event_id).await?;
+            let event = event_repository::find_singleton(pool).await?;
+            let background_image_id = event.and_then(|event| event.stamp_card_background_image_id);
+            Ok(Some((visited, total_rooms, background_image_id)))
+        })
+        .await;
 
     let (visited, total_rooms, background_image_id) = match result {
         Ok(Some(data)) => data,
