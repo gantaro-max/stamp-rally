@@ -5,6 +5,12 @@
 ## [Unreleased]
 
 ### Added
+- LINE Botの返信に部屋名入りスタンプカード画像を追加（#25）
+  - 次のクエスト案内（参加登録直後・QRチェックイン成功後・「開始」再送信時）に、訪問済み部屋の名前がスタンプとして焼き込まれたカード画像を2通目のメッセージとして添付。加えて「スタンプ状況」コマンドでいつでも同じ画像を参照できる
+  - `GET /public/stamp-card/{token}`：新規カラム`players.stamp_card_token`（UUID v4、登録時に発行）をキーに訪問済み部屋名を取得し、`stamp_card_service::render_png`でその場にPNG生成する未認証の公開エンドポイント。`/callback`・`/liff/checkin`と同様にDB呼び出しを`game_service::with_db_call_timeout`でラップし、コネクションプール枯渇障害（#22）の再発を防止
+  - 部屋名の描画には日本語フォント（Noto Sans JP Bold、SIL OFL 1.1、`assets/fonts/`に同梱）と新規依存`imageproc`・`ab_glyph`を追加。フォントはリクエストごとに再パースせず`LazyLock`でプロセス内1回のみパース
+  - `line_client::to_line_message`を`to_line_messages`（`Vec<Value>`を返す）に変更し、`send_reply`・`push_message`が1リクエストで複数メッセージ（クエストFlex Message＋スタンプカード画像）を送れるようにした
+  - 設計は[docs/architecture.md 23節「スタンプ状況（スタンプカード画像）」](docs/architecture.md#23-スタンプ状況スタンプカード画像)を参照
 - 管理画面ダッシュボードにLINE公式アカウントの友だち追加QRコードを表示（#24）
   - `GET /admin/line-qr`：環境変数`LINE_ADD_FRIEND_URL`（LINE公式アカウントマネージャーで発行される友だち追加URL）を、既存の`qr_service::render_png`（部屋QRと共通の仕組み）でその場にPNG生成して返す。`require_admin`配下、`LINE_ADD_FRIEND_URL`未設定時は404
   - `LINE_ADD_FRIEND_URL`は他のLINE関連環境変数と異なり、未設定でも起動をブロックしない。LINE公式アカウントの発行タイミングより前に他の機能をデプロイ・運用できるようにするため
