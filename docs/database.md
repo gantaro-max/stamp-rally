@@ -23,8 +23,8 @@ DB: MySQL 8.0（ローカル） / TiDB Serverless（本番）
 | カラム | 型 | 説明 |
 |:--|:--|:--|
 | `id` | INT(PK) | イベントID |
-| `event_name` | VARCHAR | イベント名 |
-| `admin_pass_hash` | VARCHAR | Argon2ハッシュ化パスワード |
+| `event_name` | VARCHAR(255) | イベント名 |
+| `admin_pass_hash` | VARCHAR(255) | Argon2ハッシュ化パスワード |
 | `is_team_mode` | BOOLEAN | チーム戦フラグ（false = 個人戦） |
 | `require_answer_check` | BOOLEAN | 判定モード（true = QR＋正解入力必須、false = QR読み取りのみ） |
 | `stamp_card_background_image_id` | INT(FK, NULL可) | スタンプカード画像全体の台紙用カスタム画像（`room_images` 参照、`ON DELETE SET NULL`）。未設定時は既定のクリーム色の台紙デザイン（[architecture.md 23節](architecture.md#23-スタンプ状況スタンプカード画像)） |
@@ -125,7 +125,9 @@ erDiagram
     events ||--o{ rooms : "has"
     events ||--o{ players : "has"
     events ||--o{ pending_registrations : "has"
-    rooms ||--o| room_images : "has"
+    events ||--o| room_images : "background image"
+    rooms ||--o| room_images : "quest image"
+    rooms ||--o| room_images : "stamp image"
     rooms ||--o{ visited_rooms : "visited by"
     players ||--o{ visited_rooms : "visits"
 ```

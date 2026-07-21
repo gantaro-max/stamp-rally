@@ -51,6 +51,7 @@ Handler(Axum) → Service → Repository（sqlx） → DB
 | LINE Webhook | `/callback` | LINE Webhookの受信・処理 |
 | LIFF連携 | `/liff/checkin` | LIFFから送られたQRスキャン結果を受け取るAPI |
 | 画像配信 | `/public/image/{uuid}` | 部屋画像のバイナリ配信（認証不要） |
+| スタンプカード画像配信 | `/public/stamp-card/{token}` | 訪問済み部屋のスタンプカードPNGをその場で生成して配信（認証不要、23節） |
 
 ### サービス層
 
@@ -99,73 +100,18 @@ Handler(Axum) → Service → Repository（sqlx） → DB
 #### アプリ状態（`AppState`）と `FromRef`
 
 - LINE連携の追加に伴い、`main.rs` の `with_state` を単一の `MySqlPool` から `AppState`（`Clone`）に切り替える
-  - `AppState { pool: MySqlPool, line_channel_secret: Arc<str>, line_channel_access_token: Arc<str>, public_base_url: Arc<str>, liff_id: Arc<str>, line_login_channel_id: Arc<str>, line_add_friend_url: Option<Arc<str>>, verify_id_tokens: bool, pending_registrations: PendingRegistrations, http_client: reqwest::Client, send_line_replies: bool }`（`liff_id`・`line_login_channel_id`はSlice B、`verify_id_tokens`・`send_line_replies`はテスト用フック、`http_client`はLINE API呼び出し共用のため後続スライスで追加。`line_add_friend_url`はダッシュボードの友だち追加QRコード表示用、22節参照）
+  - `AppState { pool: MySqlPool, line_channel_secret: Arc<str>, line_channel_access_token: Arc<str>, public_base_url: Arc<str>, liff_id: Arc<str>, line_login_channel_id: Arc<str>, line_add_friend_url: Option<Arc<str>>, verify_id_tokens: bool, http_client: reqwest::Client, stamp_image_cache: StampImageCache, send_line_replies: bool, spawn_background_tasks: bool }`（`liff_id`・`line_login_channel_id`はSlice B、`verify_id_tokens`・`send_line_replies`・`spawn_background_tasks`はテスト用フック、`http_client`はLINE API呼び出し共用のため後続スライスで追加。`line_add_friend_url`はダッシュボードの友だち追加QRコード表示用、22節参照。`stamp_image_cache`は部屋のスタンプ画像・カード台紙画像のデコード結果をプロセス内メモリでキャッシュする`Arc<RwLock<HashMap<i32, Arc<DynamicImage>>>>`、23節参照。参加登録の一時状態は9節でDB永続化（`pending_registration_repository`）に切り替えたため、`AppState`には含まれない）
   - 既存ハンドラーは `State<MySqlPool>` を使い続けられるよう、`impl FromRef<AppState> for MySqlPool`（`state.pool.clone()` を返す）を実装し、既存シグネチャを変更しない
   - LINE Webhook・画像配信ハンドラーは必要に応じて `State<AppState>` や `State<Arc<str>>`（`FromRef` 経由）を使う
 - `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` / `PUBLIC_BASE_URL` / `LIFF_ID` / `LINE_LOGIN_CHANNEL_ID` は `DATABASE_URL` と同様、起動時に未設定ならエラー出力してプロセスを終了する（`.env.example` に追記済み）
 
 ---
 
-## 3. データモデル（案）
+## 3. データモデル
 
-MysteryBotの `team_groups` に相当する概念は今回1レコードのみの運用だが、将来の複数イベント対応の拡張余地としてテーブル自体は残す。
+テーブル設計（全カラム・型・NULL可否・インデックス・外部キー・ER図）は [docs/database.md](database.md) を正とする。本節では重複管理を避けるため詳細を持たず、変更のたびに本節ではなく database.md 側を更新すること。
 
-### events
-
-| カラム | 型 | 説明 |
-|:--|:--|:--|
-| `id` | INT(PK) | イベントID |
-| `event_name` | VARCHAR | イベント名 |
-| `admin_pass_hash` | VARCHAR | Argon2ハッシュ化パスワード |
-| `is_team_mode` | BOOLEAN | チーム戦フラグ（false=個人戦） |
-| `require_answer_check` | BOOLEAN | 判定モード（true=QR＋正解入力必須） |
-
-### rooms（部屋 / チェックポイント）
-
-| カラム | 型 | 説明 |
-|:--|:--|:--|
-| `id` | INT(PK) | 部屋ID |
-| `event_id` | INT(FK) | 所属イベント |
-| `room_name` | VARCHAR | 部屋名 |
-| `quest_text` | TEXT | 部屋で提示するクエスト文 |
-| `answer` | VARCHAR(NULL可) | 正解（`require_answer_check` がtrueのイベントでのみ使用、カンマ区切りで複数可） |
-| `hint_msg` | VARCHAR(NULL可) | ヒント |
-| `image_id` | INT(FK, NULL可) | 画像ID（`room_images` 参照） |
-| `qr_uuid` | VARCHAR(36) | QRコードに埋め込む一意なUUID |
-
-### players（参加者）
-
-| カラム | 型 | 説明 |
-|:--|:--|:--|
-| `id` | INT(PK) | 自動採番 |
-| `line_user_id` | VARCHAR | LINE User ID |
-| `event_id` | INT(FK) | 参加イベント |
-| `player_name` | VARCHAR | 個人名 または チーム名 |
-| `current_room_id` | INT(FK, NULL可) | 現在向かうよう案内している部屋 |
-| `answer_verified` | BOOLEAN | 現在の部屋で正解済みか（`require_answer_check` がtrueの場合のみ使用） |
-| `started_at` | DATETIME | 参加登録日時 |
-| `finished_at` | DATETIME(NULL可) | 15部屋目クリア日時（未クリアはNULL） |
-
-ユニーク制約: `(line_user_id, event_id)`
-
-### visited_rooms（訪問済み部屋の記録）
-
-| カラム | 型 | 説明 |
-|:--|:--|:--|
-| `player_id` | INT(FK) | プレイヤー |
-| `room_id` | INT(FK) | 訪問済みの部屋 |
-| `visited_at` | DATETIME | チェックイン日時 |
-
-複合PK: `(player_id, room_id)`
-
-### room_images（画像ストレージ）
-
-| カラム | 型 | 説明 |
-|:--|:--|:--|
-| `id` | INT(PK) | 内部管理ID |
-| `uuid` | VARCHAR(36) | 公開URL用ID（`/public/image/{uuid}`） |
-| `data` | LONGBLOB | 画像バイナリ |
-| `mime_type` | VARCHAR | MIMEタイプ |
+MysteryBotの `team_groups` に相当する概念（`events`）は今回1レコードのみの運用だが、将来の複数イベント対応の拡張余地としてテーブル自体は残している。
 
 ---
 
@@ -305,12 +251,12 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
    - `event.require_answer_check = true` かつ `answer_verified = true`（既に正解済みでQR待ち） → 「QRコードを読み込んでください」の案内を再送
 9. `player` が存在せず、登録待ちでもなく、上記のどのコマンドにも該当しない → 「『開始』と送信して参加登録してください」と案内
 
-### 11. 部屋のランダム割当
+## 11. 部屋のランダム割当
 
 - `room_repository::find_random_unvisited(pool, event_id, player_id)` を新設し、`rooms` から「`visited_rooms` に存在しない」行を `ORDER BY RAND() LIMIT 1` で1件取得する（乱数生成のためだけに新規crateは追加せず、既存のsqlx生SQLの範囲で完結させる）
 - 該当行が無い（＝全部屋訪問済み）はずの経路で呼ばれた場合はロジック上の不整合なので `game_service` 側で早期にゴール判定（12節）を行い、このケースが発生しないようにする
 
-### 12. 正誤判定・ゴール判定
+## 12. 正誤判定・ゴール判定
 
 - 正誤判定：`rooms.answer` をカンマ区切りで分割し、各候補・入力文字列の両方を前後空白除去＋小文字化してから比較する（いずれか1つでも一致すれば正解）
   - 正解 → `players.answer_verified = true` に更新し、「正解です！QRコードを読み込んでください」と返信
@@ -492,6 +438,8 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
 - 他の管理画面同様`admin/_base.html`を継承し、ナビゲーション（部屋管理・設定・ランキング）とログアウトフォームを共有する。ログアウトフォームが要求する`csrf_token`をハンドラーで発行する（他のGET専用管理画面ハンドラー、例: `ranking`と同じパターン）
 - 状態変更を伴わない画面のため、ダッシュボード自体のCSRF保護は不要（共有レイアウトのログアウトフォームのCSRF検証は既存の`/auth/logout`ハンドラー側で行われる）
 
+---
+
 ## 20. 管理画面デザインシステム
 
 本番運用フィードバックで、管理画面（`/admin/*`・`/auth/login`）がBootstrap 5の既定スタイルのままで視認性・ブランドの一貫性に欠けるとの指摘があった。以下の方針で軽量なデザイントークンを導入する。
@@ -535,6 +483,8 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
 
 - 認証ロジック・CSRF・DBクエリ・ルーティングへの変更はなし（純粋に表示レイヤーの変更）
 - `admin/_base.html`のログアウトフォーム（`action="/auth/logout"`・`csrf_token`）の構造は変更しない（`src/handlers/rooms.rs`の既存テスト`room_templates_include_logout_csrf_token`がこの構造に依存しているため）
+
+---
 
 ## 21. DB接続・外部API呼び出しのタイムアウト
 

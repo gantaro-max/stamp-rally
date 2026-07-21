@@ -5,6 +5,8 @@
 ## 認証・認可
 
 - 管理者はCookieベースのセッション認証でログインする
+- セッションCookie（`tower-sessions`）は `HttpOnly` / `Secure` / `SameSite=Strict` を有効にする（ライブラリの既定値をそのまま使用し、明示的な無効化はしない）。JavaScriptからの読み取り・非HTTPS経路での送信・クロスサイトでの自動送信をいずれも防ぐ
+- ログイン成功時にセッションIDをローテーションする（`Session::cycle_id()`。session fixation対策）
 - パスワードは Argon2 でハッシュ化し、平文では保存しない
 - プレイヤーはLINEアカウントのみで識別し、Webログインは行わない
 - 管理画面（`/admin/*`）はすべてセッション認証ミドルウェアを通す
@@ -68,7 +70,7 @@ TiDB Serverless（無料枠）はVPCピアリング等のプライベートネ�
 ## 依存関係・再現性
 
 - 依存クレートのバージョンは `Cargo.lock` で固定する
-- devcontainerのベースイメージ・CLIツールのバージョンも `.devcontainer/Dockerfile` で固定する
+- devcontainerのCLIツール（`sqlx-cli`）のバージョンは `.devcontainer/Dockerfile` で固定する。ベースイメージ（`mcr.microsoft.com/devcontainers/rust:1-bookworm`）はメジャーバージョンのみを指定した可動タグで、パッチ更新のたびに中身が変わりうる（完全固定タグ`1.85-bookworm`等は存在しないため採用していない。経緯は`instructions/done/devcontainer-hardening.md`参照）。ローカル開発環境のみに影響し、本番ビルド（リポジトリルートの`Dockerfile`）には無関係
 
 ## 脆弱性を発見した場合
 

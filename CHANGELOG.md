@@ -76,6 +76,7 @@
   - 判定モード（`require_answer_check`）に応じた `answer` / `hint_msg` の必須・NULL強制バリデーション
   - 画像更新時は新画像の保存に成功してから旧画像を削除する順序とし、失敗時の孤立参照を防止（#9）
   - `handlers::rooms`から`event_repository`への直接依存を除去し、`room_service::current_event`経由に統一（#9）
+  - この#9対応は、#4マージ後の最終レビュー指摘（層構造違反・画像張り替え順序バグ・未使用の`Display`実装）を一度是正した指示書（`instructions/done/room-management-fixes.md`）を作成・アーカイブしたにもかかわらず、作業環境切り替え時のpush漏れにより是正コミットが`main`に一切反映されていなかったことが後日の再調査で判明したため、`feature/room-management-fixes-2`ブランチで同内容を再実装したもの。以後、実装完了後は必ず`git push`してPRを作成することを明文化した（[AGENTS.md](AGENTS.md)）
 - 管理者認証機能（ログイン・ログアウト）を追加（#3）
   - Cookieベースのセッション（`tower-sessions` / `MemoryStore`、非アクティブ12時間で失効）
   - セッションに保存したトークンとフォーム隠しフィールドを突き合わせるCSRF対策（ダブルサブミット方式）
@@ -121,13 +122,13 @@
   - クエスト通知に緑のヘッダーバナー（「次のクエスト」）・区切り線・文字装飾を追加
   - クリア報告を平文テキストから、クリアタイムを含む専用のFlex Message（🎉演出）に変更。`ranking_service::format_elapsed`（ランキング画面の経過時間フォーマット関数）を`pub(crate)`化し`game_service`から再利用
   - `CheckinOutcome::Cleared`が`ReplyMessage`を保持する形に変更し、`NextQuest`と同じ経路（`to_line_message`）でFlex Messageを組み立てるよう統一。`POST /liff/checkin`自体のレスポンスJSONは変更なし
+- 部屋一覧画面（`/admin/rooms`）で、各部屋のQRコードをサムネイル画像として一覧に直接表示するよう変更（従来はテキストリンクで別ページに遷移するのみ）（#11）
 - devcontainerのシークレット管理を `.env` 経由の `env_file` 方式に変更し、MySQLヘルスチェック・ホストポート設定を堅牢化（#1）
 - 設計ドキュメントを `docs/` フォルダにまとめて再編し、相互参照リンクを整理
-- 部屋一覧画面（`/admin/rooms`）で、各部屋のQRコードをサムネイル画像として一覧に直接表示するよう変更（従来はテキストリンクで別ページに遷移するのみ）（#11）
 
 ### Security
+- `csrf_service::verify_token` のトークン比較を定数時間比較に変更（`line_client`の署名検証と同様の方式に統一）（#11）
+- LIFF `/liff/checkin` が読み込むBootstrap CDNの`<link>`にSubresource Integrity（`integrity`/`crossorigin`）属性を追加し、CDN改ざん時のサプライチェーンリスクを軽減（#11）
 - LIFF `/liff/checkin` で、クライアント（ブラウザJS）が申告するLINEユーザーIDを直接信用せず、LINEのIDトークン検証エンドポイントで検証した `sub` のみを正とするよう実装（なりすまし対策）
 - LINE Webhook `/callback` の署名検証（`x-line-signature`、HMAC-SHA256・定数時間比較）を追加し、なりすまし・改ざんされたリクエストを401で遮断
 - シークレット（LINEチャネル情報・DB接続情報・管理者パスワード等）はすべて環境変数（`.env`、gitignore対象）経由で注入する方針を明文化し、devcontainerの設定からハードコードを排除
-- `csrf_service::verify_token` のトークン比較を定数時間比較に変更（`line_client`の署名検証と同様の方式に統一）（#11）
-- LIFF `/liff/checkin` が読み込むBootstrap CDNの`<link>`にSubresource Integrity（`integrity`/`crossorigin`）属性を追加し、CDN改ざん時のサプライチェーンリスクを軽減（#11）
