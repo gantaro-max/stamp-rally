@@ -634,18 +634,45 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
 - 文字（部屋名・タイトル）は、フォント自体はBoldウェイトを使っているが、小さいサイズで描画するとアンチエイリアシングにより線が細く薄く見えるという運用フィードバックがあった。`imageproc::drawing::draw_text_mut`には線幅・太さの指定機能が無いため、同じ文字列を数px（上下左右）ずらして複数回重ね描きする「疑似ボールド」で見た目の太さを補う。新規フォントアセットの追加は行わない
 - 具体的な描画ロジック（フォントの埋め込み方・座標計算）は実装指示書（`instructions/done/stamp-status.md`、フォント埋め込み方針の初出）・`instructions/done/stamp-card-hanko-design.md`（二重丸スタンプの描画ロジック）・`instructions/stamp-card-bold-text.md`（文字の太さ改善）側で提示するコード例を参照
 
-### 追記: 部屋ごとのカスタムスタンプ画像・カード台紙画像への対応（今後の拡張、2段階のPRで実装）
+### 追記: 部屋ごとのカスタムスタンプ画像・カード台紙画像への対応（PR B）
 
-管理者から「スタンプ・スタンプカード自体を画像でカスタマイズしたい」という要望があり、以下の2点を追加する。1回のPRでまとめず、下記のPR A（DB・管理画面）→ PR B（`render_png`への反映）の順で段階的に実装する。
+管理者から「スタンプ・スタンプカード自体を画像でカスタマイズしたい」という要望があり、PR A（`instructions/done/stamp-card-custom-images-db.md`、DBスキーマ・管理画面のみ）に続き、実際に`stamp_card_service::render_png`へ反映するPR Bを実装する。
 
-- **部屋ごとのスタンプ画像**（`rooms.stamp_image_id`、`docs/database.md`参照）: 設定されていれば、その部屋のマスははんこ風の自動生成ではなく、この画像を直径84pxの円形にクロップして表示する
+- **部屋ごとのスタンプ画像**（`rooms.stamp_image_id`）: 設定されていれば、その部屋のマスははんこ風の自動生成ではなく、この画像を直径84pxの円形にクロップして表示する（回転演出は適用しない。画像素材によっては回転が不自然になるため）
+- **スタンプ表示名のフォールバック**: 各部屋のラベルは呼び出し元（ハンドラー）が`stamp_label.unwrap_or(room_name)`で解決してから`render_png`に渡す。`render_png`側のテキスト処理（`truncate_room_name`・`split_stamp_label_lines`・回転）は変更しない。`stamp_label`は4文字までしか登録できないため`truncate_room_name`（6文字まで）を素通りするだけで済み、`room_name`にフォールバックした場合のみ従来通り切り詰められる
 - **スタンプカード台紙画像**（`events.stamp_card_background_image_id`）: 設定されていれば、キャンバス全体の背景としてリサイズ・クロップして敷き、その上に（従来通り）二重線の飾り枠・タイトルを重ねて描画する
 
-**PR A（本ドキュメント更新時点のスコープ）**: DBスキーマ（`rooms.stamp_label`・`rooms.stamp_image_id`・`events.stamp_card_background_image_id`）と、管理画面（部屋登録・編集フォームへのスタンプ表示名（必須・4文字まで）入力欄とスタンプ画像アップロード欄の追加、イベント設定画面へのカード台紙画像アップロード欄の追加）のみを対象とする。この時点では`stamp_card_service::render_png`は変更せず、既存の（`room_name`から切り詰める）はんこ風自動生成のまま据え置く。指示書は`instructions/stamp-card-custom-images-db.md`
+#### `stamp_card_service::render_png`のシグネチャ変更
 
-**PR B（今後、PR A完了後に着手）**: `stamp_card_service::render_png`を拡張し、部屋ごとの「スタンプ表示名（`stamp_label`、無ければ`room_name`から切り詰めたフォールバック）」と「カスタムスタンプ画像（あれば）」、カード全体の「台紙画像（あれば）」を受け取れるようにする。カスタムスタンプ画像がある部屋は円形にクロップして合成するのみとし、はんこ回転演出は適用しない（画像素材によっては回転が不自然になるため）。呼び出し元（`GET /public/stamp-card/{token}`ハンドラー）は訪問済みの各部屋の`stamp_label`・`stamp_image_id`と、イベントの`stamp_card_background_image_id`を取得し、`stamp_image_id`/`stamp_card_background_image_id`が設定されていれば対応する`room_images.data`をデコードして渡す
+```rust
+pub struct StampCell {
+    pub label: String,
+    pub custom_image: Option<Arc<DynamicImage>>,
+}
 
-**PR Bでの性能面の注意点**: 部屋のスタンプ画像・カード台紙画像は管理者がごく稀にしか変更しない静的データだが、「スタンプ状況」は参加者から高頻度に呼ばれる未認証エンドポイントである。呼び出しのたびに最大15件超のLONGBLOB行をDBから取得・デコードするのは、本番で実際に発生したDBコネクション遅延の障害（21節、TiDB Serverlessとのレイテンシ）を踏まえると避けたい。そのため、デコード済み画像（`image::DynamicImage`）を`room_images.id`をキーにプロセス内メモリでキャッシュする（`AppState`に`Arc<RwLock<HashMap<i32, Arc<DynamicImage>>>>`を追加し、初回アクセス時にDBから取得・デコードしてキャッシュ、以降はキャッシュヒットで完結させる）。画像を張り替えると新しい`id`になる設計（7節の「新規挿入→参照の張り替え→旧行削除」の順序）のため、古いキャッシュエントリは自然に使われなくなり、明示的な無効化処理は不要。エントリ数は「部屋数15＋カード背景1」程度で頭打ちのため、メモリ使用量も気にする必要はない
+pub fn render_png(
+    stamps: &[StampCell],
+    total_rooms: i64,
+    card_background: Option<&DynamicImage>,
+) -> Vec<u8>
+```
+
+`stamps`は訪問済み部屋の配列（訪問順、従来の`room_names: &[String]`に相当）。各要素の`custom_image`が`Some`ならその部屋のマスは円形クロップした画像を合成し、`None`なら従来通り`label`を使ったはんこ風自動生成（二重リング・回転）を描画する。`card_background`が`Some`ならキャンバス全体の背景に使う（`DynamicImage::resize_to_fill`でアスペクト比を保ったまま画面いっぱいにクロップ）。`None`なら従来通りクリーム色の`CARD_BACKGROUND`のまま。
+
+#### 呼び出し元（`GET /public/stamp-card/{token}`ハンドラー）の変更
+
+- `room_repository::find_visited_room_names_ordered`を、部屋名に加えて`stamp_label`・`stamp_image_id`も返すように拡張する（訪問順は変更なし）
+- イベントの`stamp_card_background_image_id`を取得する（`event_repository::find_singleton`、`room_service::current_event`と同じ形）
+- `stamp_image_id`・`stamp_card_background_image_id`が設定されている行があれば、対応する画像データをデコードして`render_png`に渡す
+
+#### 画像デコードのキャッシュ
+
+部屋のスタンプ画像・カード台紙画像は管理者がごく稀にしか変更しない静的データだが、「スタンプ状況」は参加者から高頻度に呼ばれる未認証エンドポイントである。呼び出しのたびに最大15件超のLONGBLOB行をDBから取得・デコードするのは、本番で実際に発生したDBコネクション遅延の障害（21節、TiDB Serverlessとのレイテンシ）を踏まえると避けたい。
+
+- `AppState`に`stamp_image_cache: Arc<std::sync::RwLock<HashMap<i32, Arc<DynamicImage>>>>`を追加する（`room_images.id`をキーにデコード済み画像をプロセス内メモリでキャッシュ）
+- キャッシュへのロック取得は同期（`std::sync::RwLock`）でよい。ロックを保持したまま`.await`をまたがない（読み取りでキャッシュを引いたら即座にロックを解放し、キャッシュミス時のみDBアクセス・デコードを行った後、書き込みロックを取って挿入する）ため、非同期対応のロックは不要
+- 画像を張り替えると新しい`id`になる設計（7節の「新規挿入→参照の張り替え→旧行削除」の順序）のため、古いキャッシュエントリは自然に使われなくなり、明示的な無効化処理は不要。エントリ数は「部屋数15＋カード背景1」程度で頭打ちのため、メモリ使用量も気にする必要はない
+- `room_image_repository`に、UUIDではなく内部IDで画像データを取得する`find_by_id(pool, id) -> Option<(Vec<u8>, String)>`を新設する（`stamp_image_id`・`stamp_card_background_image_id`はいずれも内部ID）
 
 ### `GET /public/stamp-card/{token}`
 
