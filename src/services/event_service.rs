@@ -97,4 +97,122 @@ mod tests {
         assert!(event.is_team_mode);
         assert!(event.require_answer_check);
     }
+    use std::io::Cursor;
+
+    use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb};
+
+    fn png_bytes() -> Vec<u8> {
+        let image = DynamicImage::ImageRgb8(ImageBuffer::from_pixel(32, 32, Rgb([10, 20, 30])));
+        let mut output = Cursor::new(Vec::new());
+        image.write_to(&mut output, ImageFormat::Png).unwrap();
+        output.into_inner()
+    }
+
+    #[sqlx::test]
+    async fn update_settings_with_background_image_stores_room_image(pool: sqlx::MySqlPool) {
+        seed_event(&pool).await;
+
+        super::update_settings(
+            &pool,
+            super::SettingsInput {
+                is_team_mode: true,
+                require_answer_check: false,
+                stamp_card_background_image_bytes: Some(png_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let event = crate::repository::event_repository::find_singleton(&pool).await.unwrap().unwrap();
+        let image_id = event.stamp_card_background_image_id.unwrap();
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
+            .bind(image_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[sqlx::test]
+    async fn update_settings_replaces_existing_background_image(pool: sqlx::MySqlPool) {
+        seed_event(&pool).await;
+        super::update_settings(
+            &pool,
+            super::SettingsInput {
+                is_team_mode: true,
+                require_answer_check: false,
+                stamp_card_background_image_bytes: Some(png_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        let old_image_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .stamp_card_background_image_id
+            .unwrap();
+
+        super::update_settings(
+            &pool,
+            super::SettingsInput {
+                is_team_mode: false,
+                require_answer_check: true,
+                stamp_card_background_image_bytes: Some(png_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let event = crate::repository::event_repository::find_singleton(&pool).await.unwrap().unwrap();
+        let new_image_id = event.stamp_card_background_image_id.unwrap();
+        let old_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
+            .bind(old_image_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let new_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
+            .bind(new_image_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_ne!(new_image_id, old_image_id);
+        assert_eq!(old_count, 0);
+        assert_eq!(new_count, 1);
+    }
+
+    #[sqlx::test]
+    async fn update_settings_without_background_image_keeps_existing_background_image(pool: sqlx::MySqlPool) {
+        seed_event(&pool).await;
+        super::update_settings(
+            &pool,
+            super::SettingsInput {
+                is_team_mode: true,
+                require_answer_check: false,
+                stamp_card_background_image_bytes: Some(png_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+        let existing_image_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .stamp_card_background_image_id;
+
+        super::update_settings(
+            &pool,
+            super::SettingsInput {
+                is_team_mode: false,
+                require_answer_check: false,
+                stamp_card_background_image_bytes: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let event = crate::repository::event_repository::find_singleton(&pool).await.unwrap().unwrap();
+        assert_eq!(event.stamp_card_background_image_id, existing_image_id);
+    }
+
 }

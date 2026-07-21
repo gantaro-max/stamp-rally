@@ -138,4 +138,29 @@ mod tests {
         assert!(!updated.is_team_mode);
         assert!(!updated.require_answer_check);
     }
+    #[sqlx::test]
+    async fn update_settings_persists_stamp_card_background_image_id(pool: sqlx::MySqlPool) {
+        seed_admin_event_if_empty(&pool, "admin-secret", "Stamp Rally")
+            .await
+            .unwrap();
+        let event = super::find_singleton(&pool).await.unwrap().unwrap();
+        let image_id = crate::repository::room_image_repository::insert(
+            &pool,
+            "event-bg-repo",
+            &[1, 2, 3],
+            "image/jpeg",
+        )
+        .await
+        .unwrap();
+
+        super::update_settings(&pool, event.id, true, false, Some(image_id))
+            .await
+            .unwrap();
+
+        let updated = super::find_singleton(&pool).await.unwrap().unwrap();
+        assert_eq!(updated.stamp_card_background_image_id, Some(image_id));
+        assert!(updated.is_team_mode);
+        assert!(!updated.require_answer_check);
+    }
+
 }

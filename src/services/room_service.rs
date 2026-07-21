@@ -436,4 +436,158 @@ mod tests {
         );
         assert_eq!(image_count, 0);
     }
+    #[sqlx::test]
+    async fn create_rejects_empty_stamp_label_without_creating_room(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let mut input = input("Room".to_string());
+        input.stamp_label = String::new();
+
+        let err = super::create(&pool, event_id, input).await.unwrap_err();
+
+        assert!(matches!(err, RoomError::StampLabelInvalid));
+        assert_eq!(crate::repository::room_repository::count(&pool, event_id).await.unwrap(), 0);
+    }
+
+    #[sqlx::test]
+    async fn create_rejects_stamp_label_longer_than_four_chars(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let mut input = input("Room".to_string());
+        input.stamp_label = "12345".to_string();
+
+        let err = super::create(&pool, event_id, input).await.unwrap_err();
+
+        assert!(matches!(err, RoomError::StampLabelInvalid));
+    }
+
+    #[sqlx::test]
+    async fn create_accepts_valid_stamp_label(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let mut input = input("Room".to_string());
+        input.stamp_label = "図書".to_string();
+
+        let room_id = super::create(&pool, event_id, input).await.unwrap();
+
+        let room = crate::repository::room_repository::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        assert_eq!(room.stamp_label.as_deref(), Some("図書"));
+    }
+
+    #[sqlx::test]
+    async fn create_with_stamp_image_stores_room_image(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let mut input = input("Stamp Image Room".to_string());
+        input.stamp_image_bytes = Some(png_bytes());
+
+        let room_id = super::create(&pool, event_id, input).await.unwrap();
+
+        let room = crate::repository::room_repository::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        let stamp_image_id = room.stamp_image_id.unwrap();
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
+            .bind(stamp_image_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[sqlx::test]
+    async fn update_replaces_existing_stamp_image(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let mut input = input("Stamp Image Room".to_string());
+        input.stamp_image_bytes = Some(png_bytes());
+        let room_id = super::create(&pool, event_id, input).await.unwrap();
+        let old_stamp_image_id = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .stamp_image_id
+            .unwrap();
+
+        super::update(
+            &pool,
+            room_id,
+            super::UpdateRoomInput {
+                room_name: "Updated".to_string(),
+                quest_text: "Updated Quest".to_string(),
+                answer: None,
+                hint_msg: None,
+                image_bytes: None,
+                stamp_label: "更新".to_string(),
+                stamp_image_bytes: Some(png_bytes()),
+            },
+        )
+        .await
+        .unwrap();
+
+        let room = crate::repository::room_repository::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        let new_stamp_image_id = room.stamp_image_id.unwrap();
+        let old_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
+            .bind(old_stamp_image_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let new_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
+            .bind(new_stamp_image_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_ne!(new_stamp_image_id, old_stamp_image_id);
+        assert_eq!(old_count, 0);
+        assert_eq!(new_count, 1);
+    }
+
+    #[sqlx::test]
+    async fn update_without_stamp_image_keeps_existing_stamp_image(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let mut input = input("Stamp Image Room".to_string());
+        input.stamp_image_bytes = Some(png_bytes());
+        let room_id = super::create(&pool, event_id, input).await.unwrap();
+        let existing_stamp_image_id = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .stamp_image_id;
+
+        super::update(
+            &pool,
+            room_id,
+            super::UpdateRoomInput {
+                room_name: "Updated".to_string(),
+                quest_text: "Updated Quest".to_string(),
+                answer: None,
+                hint_msg: None,
+                image_bytes: None,
+                stamp_label: "更新".to_string(),
+                stamp_image_bytes: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let room = crate::repository::room_repository::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        assert_eq!(room.stamp_image_id, existing_stamp_image_id);
+    }
+
+    #[sqlx::test]
+    async fn delete_removes_linked_stamp_image(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let mut input = input("Stamp Image Room".to_string());
+        input.stamp_image_bytes = Some(png_bytes());
+        let room_id = super::create(&pool, event_id, input).await.unwrap();
+        let stamp_image_id = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .stamp_image_id
+            .unwrap();
+
+        super::delete(&pool, room_id).await.unwrap();
+
+        let image_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
+            .bind(stamp_image_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(image_count, 0);
+    }
+
 }

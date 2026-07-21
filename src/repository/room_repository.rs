@@ -537,6 +537,91 @@ mod tests {
     }
 
     #[sqlx::test]
+    async fn insert_persists_stamp_label_and_stamp_image_id(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let stamp_image_id = crate::repository::room_image_repository::insert(
+            &pool,
+            "stamp-image-repo-insert",
+            &[1, 2, 3],
+            "image/jpeg",
+        )
+        .await
+        .unwrap();
+
+        let room_id = super::insert(
+            &pool,
+            event_id,
+            "Room A",
+            "Quest",
+            None,
+            None,
+            None,
+            Some("図書"),
+            Some(stamp_image_id),
+            "qr-stamp-custom-1",
+        )
+        .await
+        .unwrap();
+
+        let room = super::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        assert_eq!(room.stamp_label.as_deref(), Some("図書"));
+        assert_eq!(room.stamp_image_id, Some(stamp_image_id));
+    }
+
+    #[sqlx::test]
+    async fn update_changes_stamp_label_and_stamp_image_id(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let old_stamp_image_id = crate::repository::room_image_repository::insert(
+            &pool,
+            "stamp-image-repo-old",
+            &[1, 2, 3],
+            "image/jpeg",
+        )
+        .await
+        .unwrap();
+        let new_stamp_image_id = crate::repository::room_image_repository::insert(
+            &pool,
+            "stamp-image-repo-new",
+            &[4, 5, 6],
+            "image/jpeg",
+        )
+        .await
+        .unwrap();
+        let room_id = super::insert(
+            &pool,
+            event_id,
+            "Room A",
+            "Quest",
+            None,
+            None,
+            None,
+            Some("旧"),
+            Some(old_stamp_image_id),
+            "qr-stamp-custom-2",
+        )
+        .await
+        .unwrap();
+
+        super::update(
+            &pool,
+            room_id,
+            "Room B",
+            "Quest B",
+            None,
+            None,
+            None,
+            Some("新印"),
+            Some(new_stamp_image_id),
+        )
+        .await
+        .unwrap();
+
+        let room = super::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        assert_eq!(room.stamp_label.as_deref(), Some("新印"));
+        assert_eq!(room.stamp_image_id, Some(new_stamp_image_id));
+    }
+
+    #[sqlx::test]
     async fn finds_room_by_qr_uuid(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
         let room_id = super::insert(

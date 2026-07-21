@@ -284,6 +284,46 @@ mod tests {
         rest[..end].to_string()
     }
 
+    fn png_bytes() -> Vec<u8> {
+        let image = image::DynamicImage::ImageRgb8(image::ImageBuffer::from_pixel(
+            32,
+            32,
+            image::Rgb([10, 20, 30]),
+        ));
+        let mut output = std::io::Cursor::new(Vec::new());
+        image
+            .write_to(&mut output, image::ImageFormat::Png)
+            .unwrap();
+        output.into_inner()
+    }
+
+    fn multipart_text_part(boundary: &str, name: &str, value: &str) -> Vec<u8> {
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+        )
+        .into_bytes()
+    }
+
+    fn multipart_file_part(
+        boundary: &str,
+        name: &str,
+        filename: &str,
+        content_type: &str,
+        bytes: &[u8],
+    ) -> Vec<u8> {
+        let mut body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n"
+        )
+        .into_bytes();
+        body.extend_from_slice(bytes);
+        body.extend_from_slice(b"\r\n");
+        body
+    }
+
+    fn multipart_finish(boundary: &str) -> Vec<u8> {
+        format!("--{boundary}--\r\n").into_bytes()
+    }
+
     async fn get_login_cookie_and_csrf(app: Router) -> (String, String) {
         let response = app
             .oneshot(
@@ -1066,6 +1106,149 @@ mod tests {
                 .await
                 .unwrap(),
             1
+        );
+    }
+
+    #[sqlx::test]
+    async fn post_room_add_accepts_stamp_label_and_stamp_image(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+        let boundary = "room-stamp-boundary";
+        let mut body = Vec::new();
+        body.extend(multipart_text_part(boundary, "csrf_token", &csrf_token));
+        body.extend(multipart_text_part(boundary, "room_name", "Library"));
+        body.extend(multipart_text_part(boundary, "quest_text", "Find a book"));
+        body.extend(multipart_text_part(boundary, "stamp_label", "図書"));
+        body.extend(multipart_file_part(
+            boundary,
+            "stamp_image",
+            "stamp.png",
+            "image/png",
+            &png_bytes(),
+        ));
+        body.extend(multipart_finish(boundary));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/admin/rooms/add")
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/admin/rooms"
+        );
+        let rooms = crate::repository::room_repository::find_all(&pool, event_id)
+            .await
+            .unwrap();
+        assert_eq!(rooms.len(), 1);
+        assert_eq!(rooms[0].stamp_label.as_deref(), Some("図書"));
+        assert!(rooms[0].stamp_image_id.is_some());
+    }
+
+    #[sqlx::test]
+    async fn post_room_add_without_stamp_label_rerenders_error(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+        let boundary = "room-stamp-missing-boundary";
+        let mut body = Vec::new();
+        body.extend(multipart_text_part(boundary, "csrf_token", &csrf_token));
+        body.extend(multipart_text_part(boundary, "room_name", "Library"));
+        body.extend(multipart_text_part(boundary, "quest_text", "Find a book"));
+        body.extend(multipart_finish(boundary));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/admin/rooms/add")
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("スタンプ表示名は1〜4文字で入力してください"));
+        assert_eq!(
+            crate::repository::room_repository::count(&pool, event_id)
+                .await
+                .unwrap(),
+            0
         );
     }
 
@@ -1903,6 +2086,143 @@ mod tests {
         assert_eq!(response.status(), StatusCode::FOUND);
         assert!(!event.is_team_mode);
         assert!(!event.require_answer_check);
+    }
+
+    #[sqlx::test]
+    async fn post_settings_multipart_without_image_updates_flags(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        crate::repository::event_repository::update_settings(&pool, event_id, false, true, None)
+            .await
+            .unwrap();
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+        let boundary = "settings-multipart-boundary";
+        let mut body = Vec::new();
+        body.extend(multipart_text_part(boundary, "csrf_token", &csrf_token));
+        body.extend(multipart_text_part(boundary, "is_team_mode", "on"));
+        body.extend(multipart_finish(boundary));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/admin/settings")
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let event = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert!(event.is_team_mode);
+        assert!(!event.require_answer_check);
+        assert_eq!(event.stamp_card_background_image_id, None);
+    }
+
+    #[sqlx::test]
+    async fn post_settings_multipart_with_background_image_redirects(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app = app_router(pool.clone());
+        let (cookie, csrf_token) = get_login_cookie_and_csrf(app.clone()).await;
+        let login_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/login")
+                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::from(format!(
+                        "password=admin-secret&csrf_token={csrf_token}"
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let session_cookie = extract_cookie(&login_response);
+        let boundary = "settings-bg-boundary";
+        let mut body = Vec::new();
+        body.extend(multipart_text_part(boundary, "csrf_token", &csrf_token));
+        body.extend(multipart_text_part(boundary, "require_answer_check", "on"));
+        body.extend(multipart_file_part(
+            boundary,
+            "stamp_card_background_image",
+            "background.png",
+            "image/png",
+            &png_bytes(),
+        ));
+        body.extend(multipart_finish(boundary));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/admin/settings")
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .header(header::COOKIE, session_cookie)
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let event = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(
+            response.headers().get(header::LOCATION).unwrap(),
+            "/admin/settings"
+        );
+        assert!(!event.is_team_mode);
+        assert!(event.require_answer_check);
+        assert!(event.stamp_card_background_image_id.is_some());
     }
 
     #[sqlx::test]
