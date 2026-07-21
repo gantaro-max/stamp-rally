@@ -10,6 +10,8 @@ pub struct Room {
     pub answer: Option<String>,
     pub hint_msg: Option<String>,
     pub image_id: Option<i32>,
+    pub stamp_label: Option<String>,
+    pub stamp_image_id: Option<i32>,
     pub qr_uuid: String,
 }
 
@@ -31,12 +33,14 @@ pub async fn insert(
     answer: Option<&str>,
     hint_msg: Option<&str>,
     image_id: Option<i32>,
+    stamp_label: Option<&str>,
+    stamp_image_id: Option<i32>,
     qr_uuid: &str,
 ) -> Result<i32, sqlx::Error> {
     let result = sqlx::query(
         r#"
-        INSERT INTO rooms (event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO rooms (event_id, room_name, quest_text, answer, hint_msg, image_id, stamp_label, stamp_image_id, qr_uuid)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(event_id)
@@ -45,6 +49,8 @@ pub async fn insert(
     .bind(answer)
     .bind(hint_msg)
     .bind(image_id)
+    .bind(stamp_label)
+    .bind(stamp_image_id)
     .bind(qr_uuid)
     .execute(pool)
     .await?;
@@ -60,11 +66,14 @@ pub async fn update(
     answer: Option<&str>,
     hint_msg: Option<&str>,
     image_id: Option<i32>,
+    stamp_label: Option<&str>,
+    stamp_image_id: Option<i32>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
         UPDATE rooms
-        SET room_name = ?, quest_text = ?, answer = ?, hint_msg = ?, image_id = ?
+        SET room_name = ?, quest_text = ?, answer = ?, hint_msg = ?, image_id = ?,
+            stamp_label = ?, stamp_image_id = ?
         WHERE id = ?
         "#,
     )
@@ -73,6 +82,8 @@ pub async fn update(
     .bind(answer)
     .bind(hint_msg)
     .bind(image_id)
+    .bind(stamp_label)
+    .bind(stamp_image_id)
     .bind(id)
     .execute(pool)
     .await?;
@@ -92,7 +103,7 @@ pub async fn delete(pool: &MySqlPool, id: i32) -> Result<(), sqlx::Error> {
 pub async fn find_all(pool: &MySqlPool, event_id: i32) -> Result<Vec<Room>, sqlx::Error> {
     let rows = sqlx::query(
         r#"
-        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid
+        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, stamp_label, stamp_image_id, qr_uuid
         FROM rooms
         WHERE event_id = ?
         ORDER BY id
@@ -112,6 +123,8 @@ pub async fn find_all(pool: &MySqlPool, event_id: i32) -> Result<Vec<Room>, sqlx
                 answer: row.try_get("answer")?,
                 hint_msg: row.try_get("hint_msg")?,
                 image_id: row.try_get("image_id")?,
+                stamp_label: row.try_get("stamp_label")?,
+                stamp_image_id: row.try_get("stamp_image_id")?,
                 qr_uuid: row.try_get("qr_uuid")?,
             })
         })
@@ -121,7 +134,7 @@ pub async fn find_all(pool: &MySqlPool, event_id: i32) -> Result<Vec<Room>, sqlx
 pub async fn find_by_id(pool: &MySqlPool, id: i32) -> Result<Option<Room>, sqlx::Error> {
     let Some(row) = sqlx::query(
         r#"
-        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid
+        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, stamp_label, stamp_image_id, qr_uuid
         FROM rooms
         WHERE id = ?
         "#,
@@ -141,6 +154,8 @@ pub async fn find_by_id(pool: &MySqlPool, id: i32) -> Result<Option<Room>, sqlx:
         answer: row.try_get("answer")?,
         hint_msg: row.try_get("hint_msg")?,
         image_id: row.try_get("image_id")?,
+        stamp_label: row.try_get("stamp_label")?,
+        stamp_image_id: row.try_get("stamp_image_id")?,
         qr_uuid: row.try_get("qr_uuid")?,
     }))
 }
@@ -148,7 +163,7 @@ pub async fn find_by_id(pool: &MySqlPool, id: i32) -> Result<Option<Room>, sqlx:
 pub async fn find_by_qr_uuid(pool: &MySqlPool, qr_uuid: &str) -> Result<Option<Room>, sqlx::Error> {
     let Some(row) = sqlx::query(
         r#"
-        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid
+        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, stamp_label, stamp_image_id, qr_uuid
         FROM rooms
         WHERE qr_uuid = ?
         "#,
@@ -168,6 +183,8 @@ pub async fn find_by_qr_uuid(pool: &MySqlPool, qr_uuid: &str) -> Result<Option<R
         answer: row.try_get("answer")?,
         hint_msg: row.try_get("hint_msg")?,
         image_id: row.try_get("image_id")?,
+        stamp_label: row.try_get("stamp_label")?,
+        stamp_image_id: row.try_get("stamp_image_id")?,
         qr_uuid: row.try_get("qr_uuid")?,
     }))
 }
@@ -199,7 +216,7 @@ pub async fn find_random_unvisited(
 ) -> Result<Option<Room>, sqlx::Error> {
     let Some(row) = sqlx::query(
         r#"
-        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, qr_uuid
+        SELECT id, event_id, room_name, quest_text, answer, hint_msg, image_id, stamp_label, stamp_image_id, qr_uuid
         FROM rooms
         WHERE event_id = ?
           AND NOT EXISTS (
@@ -228,6 +245,8 @@ pub async fn find_random_unvisited(
         answer: row.try_get("answer")?,
         hint_msg: row.try_get("hint_msg")?,
         image_id: row.try_get("image_id")?,
+        stamp_label: row.try_get("stamp_label")?,
+        stamp_image_id: row.try_get("stamp_image_id")?,
         qr_uuid: row.try_get("qr_uuid")?,
     }))
 }
@@ -260,9 +279,10 @@ mod tests {
             "Find the red mark",
             Some("red"),
             Some("look up"),
+            None,            None,
             None,
-            "qr-uuid-1",
-        )
+
+            "qr-uuid-1",)
         .await
         .unwrap();
 
@@ -290,9 +310,10 @@ mod tests {
                 "Quest",
                 None,
                 None,
+                None,                None,
                 None,
-                &format!("qr-count-{index}"),
-            )
+
+                &format!("qr-count-{index}"),)
             .await
             .unwrap();
         }
@@ -310,9 +331,10 @@ mod tests {
             "Old Quest",
             Some("old"),
             Some("old hint"),
+            None,            None,
             None,
-            "qr-update-1",
-        )
+
+            "qr-update-1",)
         .await
         .unwrap();
 
@@ -322,9 +344,10 @@ mod tests {
             "New Room",
             "New Quest",
             Some("new"),
-            Some("new hint"),
+            Some("new hint"),            None,
             None,
-        )
+
+            None,)
         .await
         .unwrap();
 
@@ -346,9 +369,10 @@ mod tests {
             "Quest",
             None,
             None,
+            None,            None,
             None,
-            "qr-delete-1",
-        )
+
+            "qr-delete-1",)
         .await
         .unwrap();
 
@@ -381,9 +405,10 @@ mod tests {
             "Quest",
             None,
             None,
+            None,            None,
             None,
-            "qr-visited-order-1",
-        )
+
+            "qr-visited-order-1",)
         .await
         .unwrap();
         let room_b = super::insert(
@@ -393,9 +418,10 @@ mod tests {
             "Quest",
             None,
             None,
+            None,            None,
             None,
-            "qr-visited-order-2",
-        )
+
+            "qr-visited-order-2",)
         .await
         .unwrap();
         sqlx::query(
@@ -444,9 +470,10 @@ mod tests {
             "Quest",
             None,
             None,
+            None,            None,
             None,
-            "qr-random-1",
-        )
+
+            "qr-random-1",)
         .await
         .unwrap();
         let unvisited_a = super::insert(
@@ -456,9 +483,10 @@ mod tests {
             "Quest",
             None,
             None,
+            None,            None,
             None,
-            "qr-random-2",
-        )
+
+            "qr-random-2",)
         .await
         .unwrap();
         let unvisited_b = super::insert(
@@ -468,9 +496,10 @@ mod tests {
             "Quest",
             None,
             None,
+            None,            None,
             None,
-            "qr-random-3",
-        )
+
+            "qr-random-3",)
         .await
         .unwrap();
         sqlx::query(
@@ -502,9 +531,10 @@ mod tests {
                 "Quest",
                 None,
                 None,
+                None,                None,
                 None,
-                &format!("qr-all-visited-{index}"),
-            )
+
+                &format!("qr-all-visited-{index}"),)
             .await
             .unwrap();
             sqlx::query(
@@ -631,9 +661,10 @@ mod tests {
             "Scan the code",
             None,
             None,
+            None,            None,
             None,
-            "qr-find-by-uuid",
-        )
+
+            "qr-find-by-uuid",)
         .await
         .unwrap();
 

@@ -502,9 +502,10 @@ mod tests {
             "Find the red book",
             answer,
             hint,
+            None,            None,
             None,
-            &format!("qr-{name}"),
-        )
+
+            &format!("qr-{name}"),)
         .await
         .unwrap()
     }
@@ -1125,9 +1126,10 @@ mod tests {
             &format!("Quest for {name}"),
             Some("red"),
             Some("hint"),
+            None,            None,
             None,
-            qr_uuid,
-        )
+
+            qr_uuid,)
         .await
         .unwrap()
     }

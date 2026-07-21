@@ -1,11 +1,9 @@
 use askama::Template;
 use axum::{
-    Form,
-    extract::State,
+    extract::{Multipart, State},
     http::{StatusCode, header},
     response::{Html, IntoResponse, Response},
 };
-use serde::Deserialize;
 use sqlx::MySqlPool;
 use tower_sessions::Session;
 
@@ -66,22 +64,12 @@ struct SettingsTemplate {
     require_answer_check: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default)]
 pub struct SettingsForm {
-    #[serde(default, deserialize_with = "deserialize_checkbox")]
     is_team_mode: bool,
-    #[serde(default, deserialize_with = "deserialize_checkbox")]
     require_answer_check: bool,
-    #[serde(default)]
     csrf_token: String,
-}
-
-fn deserialize_checkbox<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = String::deserialize(deserializer)?;
-    Ok(value == "on" || value == "true")
+    stamp_card_background_image_bytes: Option<Vec<u8>>,
 }
 
 pub async fn settings_form(session: Session, State(pool): State<MySqlPool>) -> Response {
@@ -108,8 +96,12 @@ pub async fn settings_form(session: Session, State(pool): State<MySqlPool>) -> R
 pub async fn update_settings(
     session: Session,
     State(pool): State<MySqlPool>,
-    Form(form): Form<SettingsForm>,
+    multipart: Multipart,
 ) -> Response {
+    let form = match parse_settings_multipart(multipart).await {
+        Ok(form) => form,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
     if !csrf_service::verify_token(&session, &form.csrf_token).await {
         return StatusCode::FORBIDDEN.into_response();
     }
@@ -117,11 +109,37 @@ pub async fn update_settings(
     let input = event_service::SettingsInput {
         is_team_mode: form.is_team_mode,
         require_answer_check: form.require_answer_check,
+        stamp_card_background_image_bytes: form.stamp_card_background_image_bytes,
     };
     match event_service::update_settings(&pool, input).await {
         Ok(()) => (StatusCode::FOUND, [(header::LOCATION, "/admin/settings")]).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+async fn parse_settings_multipart(mut multipart: Multipart) -> Result<SettingsForm, ()> {
+    let mut form = SettingsForm::default();
+
+    while let Some(field) = multipart.next_field().await.map_err(|_| ())? {
+        let name = field.name().unwrap_or_default().to_string();
+        if name == "stamp_card_background_image" {
+            let bytes = field.bytes().await.map_err(|_| ())?;
+            if !bytes.is_empty() {
+                form.stamp_card_background_image_bytes = Some(bytes.to_vec());
+            }
+            continue;
+        }
+
+        let value = field.text().await.map_err(|_| ())?;
+        match name.as_str() {
+            "is_team_mode" => form.is_team_mode = true,
+            "require_answer_check" => form.require_answer_check = true,
+            "csrf_token" => form.csrf_token = value,
+            _ => {}
+        }
+    }
+
+    Ok(form)
 }
 
 #[derive(Template)]

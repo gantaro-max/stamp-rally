@@ -15,6 +15,8 @@ pub struct CreateRoomInput {
     pub answer: Option<String>,
     pub hint_msg: Option<String>,
     pub image_bytes: Option<Vec<u8>>,
+    pub stamp_label: String,
+    pub stamp_image_bytes: Option<Vec<u8>>,
 }
 
 #[derive(Debug)]
@@ -24,12 +26,15 @@ pub struct UpdateRoomInput {
     pub answer: Option<String>,
     pub hint_msg: Option<String>,
     pub image_bytes: Option<Vec<u8>>,
+    pub stamp_label: String,
+    pub stamp_image_bytes: Option<Vec<u8>>,
 }
 
 #[derive(Debug)]
 pub enum RoomError {
     MaxRoomsReached,
     AnswerRequired,
+    StampLabelInvalid,
     NotFound,
     Image,
     Database,
@@ -45,6 +50,33 @@ pub async fn current_event(pool: &MySqlPool) -> Result<event_repository::Event, 
     event_repository::find_singleton(pool)
         .await?
         .ok_or(RoomError::NotFound)
+}
+
+
+fn validate_stamp_label(stamp_label: &str) -> Result<(), RoomError> {
+    let len = stamp_label.chars().count();
+    if len == 0 || len > 4 {
+        return Err(RoomError::StampLabelInvalid);
+    }
+    Ok(())
+}
+
+async fn insert_uploaded_image(
+    pool: &MySqlPool,
+    bytes: Option<Vec<u8>>,
+) -> Result<Option<i32>, RoomError> {
+    let Some(bytes) = bytes else {
+        return Ok(None);
+    };
+    let processed = image_service::process_upload(&bytes).map_err(|_| RoomError::Image)?;
+    let image_id = room_image_repository::insert(
+        pool,
+        &Uuid::new_v4().to_string(),
+        &processed,
+        "image/jpeg",
+    )
+    .await?;
+    Ok(Some(image_id))
 }
 
 pub async fn create(
@@ -63,6 +95,8 @@ pub async fn create(
     let answer = input.answer.as_deref();
     let hint_msg = input.hint_msg.as_deref();
 
+    validate_stamp_label(&input.stamp_label)?;
+
     if require_answer_check && answer.is_none_or(|value| value.trim().is_empty()) {
         return Err(RoomError::AnswerRequired);
     }
@@ -72,20 +106,8 @@ pub async fn create(
         (None, None)
     };
 
-    let image_id = if let Some(bytes) = input.image_bytes {
-        let processed = image_service::process_upload(&bytes).map_err(|_| RoomError::Image)?;
-        Some(
-            room_image_repository::insert(
-                pool,
-                &Uuid::new_v4().to_string(),
-                &processed,
-                "image/jpeg",
-            )
-            .await?,
-        )
-    } else {
-        None
-    };
+    let image_id = insert_uploaded_image(pool, input.image_bytes).await?;
+    let stamp_image_id = insert_uploaded_image(pool, input.stamp_image_bytes).await?;
 
     room_repository::insert(
         pool,
@@ -95,6 +117,8 @@ pub async fn create(
         answer,
         hint_msg,
         image_id,
+        Some(input.stamp_label.as_str()),
+        stamp_image_id,
         &Uuid::new_v4().to_string(),
     )
     .await
@@ -112,6 +136,8 @@ pub async fn update(pool: &MySqlPool, id: i32, input: UpdateRoomInput) -> Result
     let answer = input.answer.as_deref();
     let hint_msg = input.hint_msg.as_deref();
 
+    validate_stamp_label(&input.stamp_label)?;
+
     if require_answer_check && answer.is_none_or(|value| value.trim().is_empty()) {
         return Err(RoomError::AnswerRequired);
     }
@@ -121,21 +147,15 @@ pub async fn update(pool: &MySqlPool, id: i32, input: UpdateRoomInput) -> Result
         (None, None)
     };
 
-    let image_id = if let Some(bytes) = input.image_bytes {
-        let processed = image_service::process_upload(&bytes).map_err(|_| RoomError::Image)?;
-        let new_image_id = room_image_repository::insert(
-            pool,
-            &Uuid::new_v4().to_string(),
-            &processed,
-            "image/jpeg",
-        )
-        .await?;
-        if let Some(old_image_id) = existing.image_id {
-            room_image_repository::delete(pool, old_image_id).await?;
-        }
-        Some(new_image_id)
-    } else {
-        existing.image_id
+    let old_image_id = existing.image_id;
+    let old_stamp_image_id = existing.stamp_image_id;
+    let image_id = match insert_uploaded_image(pool, input.image_bytes).await? {
+        Some(new_image_id) => Some(new_image_id),
+        None => old_image_id,
+    };
+    let stamp_image_id = match insert_uploaded_image(pool, input.stamp_image_bytes).await? {
+        Some(new_image_id) => Some(new_image_id),
+        None => old_stamp_image_id,
     };
 
     room_repository::update(
@@ -146,8 +166,21 @@ pub async fn update(pool: &MySqlPool, id: i32, input: UpdateRoomInput) -> Result
         answer,
         hint_msg,
         image_id,
+        Some(input.stamp_label.as_str()),
+        stamp_image_id,
     )
     .await?;
+
+    if image_id != old_image_id {
+        if let Some(old_image_id) = old_image_id {
+            room_image_repository::delete(pool, old_image_id).await?;
+        }
+    }
+    if stamp_image_id != old_stamp_image_id {
+        if let Some(old_stamp_image_id) = old_stamp_image_id {
+            room_image_repository::delete(pool, old_stamp_image_id).await?;
+        }
+    }
 
     Ok(())
 }
@@ -159,6 +192,9 @@ pub async fn delete(pool: &MySqlPool, id: i32) -> Result<(), RoomError> {
 
     if let Some(image_id) = existing.image_id {
         room_image_repository::delete(pool, image_id).await?;
+    }
+    if let Some(stamp_image_id) = existing.stamp_image_id {
+        room_image_repository::delete(pool, stamp_image_id).await?;
     }
     room_repository::delete(pool, id).await?;
 
@@ -210,6 +246,8 @@ mod tests {
             answer: None,
             hint_msg: None,
             image_bytes: None,
+            stamp_label: "印".to_string(),
+            stamp_image_bytes: None,
         }
     }
 
@@ -231,9 +269,10 @@ mod tests {
                 "Quest",
                 None,
                 None,
+                None,                None,
                 None,
-                &format!("qr-limit-{index}"),
-            )
+
+                &format!("qr-limit-{index}"),)
             .await
             .unwrap();
         }
@@ -285,6 +324,8 @@ mod tests {
                 answer: Some("submitted".to_string()),
                 hint_msg: Some("hint".to_string()),
                 image_bytes: None,
+                stamp_label: "印".to_string(),
+                stamp_image_bytes: None,
             },
         )
         .await
@@ -311,6 +352,8 @@ mod tests {
                 answer: None,
                 hint_msg: None,
                 image_bytes: Some(png_bytes()),
+                stamp_label: "印".to_string(),
+                stamp_image_bytes: None,
             },
         )
         .await
@@ -352,6 +395,8 @@ mod tests {
                 answer: None,
                 hint_msg: None,
                 image_bytes: Some(png_bytes()),
+                stamp_label: "印".to_string(),
+                stamp_image_bytes: None,
             },
         )
         .await
@@ -372,6 +417,8 @@ mod tests {
                 answer: None,
                 hint_msg: None,
                 image_bytes: Some(png_bytes()),
+                stamp_label: "印".to_string(),
+                stamp_image_bytes: None,
             },
         )
         .await
@@ -410,6 +457,8 @@ mod tests {
                 answer: None,
                 hint_msg: None,
                 image_bytes: Some(png_bytes()),
+                stamp_label: "印".to_string(),
+                stamp_image_bytes: None,
             },
         )
         .await

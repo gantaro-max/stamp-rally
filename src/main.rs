@@ -857,9 +857,10 @@ mod tests {
             "Find a book",
             None,
             None,
+            None,            None,
             None,
-            "qr-dashboard-1",
-        )
+
+            "qr-dashboard-1",)
         .await
         .unwrap();
         crate::repository::room_repository::insert(
@@ -869,9 +870,10 @@ mod tests {
             "Find a painting",
             None,
             None,
+            None,            None,
             None,
-            "qr-dashboard-2",
-        )
+
+            "qr-dashboard-2",)
         .await
         .unwrap();
         let app = app_router(pool);
@@ -908,7 +910,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .id;
-        crate::repository::event_repository::update_settings(&pool, event_id, true, true)
+        crate::repository::event_repository::update_settings(&pool, event_id, true, true, None)
             .await
             .unwrap();
         let app = app_router(pool);
@@ -955,9 +957,10 @@ mod tests {
             "Find a book",
             None,
             None,
+            None,            None,
             None,
-            "qr-list-1",
-        )
+
+            "qr-list-1",)
         .await
         .unwrap();
         let app = app_router(pool);
@@ -1077,7 +1080,7 @@ mod tests {
         let session_cookie = extract_cookie(&login_response);
         let boundary = "room-boundary";
         let body = format!(
-            "--{boundary}\r\nContent-Disposition: form-data; name=\"csrf_token\"\r\n\r\n{csrf_token}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"room_name\"\r\n\r\nLibrary\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"quest_text\"\r\n\r\nFind a book\r\n--{boundary}--\r\n"
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"csrf_token\"\r\n\r\n{csrf_token}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"room_name\"\r\n\r\nLibrary\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"quest_text\"\r\n\r\nFind a book\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"stamp_label\"\r\n\r\n図書\r\n--{boundary}--\r\n"
         );
 
         let response = app
@@ -1383,9 +1386,10 @@ mod tests {
             "Quest",
             None,
             None,
+            None,            None,
             None,
-            "qr-delete-handler",
-        )
+
+            "qr-delete-handler",)
         .await
         .unwrap();
         let app = app_router(pool.clone());
@@ -1454,9 +1458,10 @@ mod tests {
             "Quest",
             None,
             None,
+            None,            None,
             None,
-            "qr-handler-value",
-        )
+
+            "qr-handler-value",)
         .await
         .unwrap();
         let app = app_router(pool);
@@ -1519,9 +1524,10 @@ mod tests {
             "Old Quest",
             None,
             None,
+            None,            None,
             None,
-            "qr-update-handler",
-        )
+
+            "qr-update-handler",)
         .await
         .unwrap();
         let app = app_router(pool.clone());
@@ -1544,7 +1550,7 @@ mod tests {
         let session_cookie = extract_cookie(&login_response);
         let boundary = "room-update-boundary";
         let body = format!(
-            "--{boundary}\r\nContent-Disposition: form-data; name=\"csrf_token\"\r\n\r\n{csrf_token}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"room_name\"\r\n\r\nNew\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"quest_text\"\r\n\r\nNew Quest\r\n--{boundary}--\r\n"
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"csrf_token\"\r\n\r\n{csrf_token}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"room_name\"\r\n\r\nNew\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"quest_text\"\r\n\r\nNew Quest\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"stamp_label\"\r\n\r\n新\r\n--{boundary}--\r\n"
         );
 
         let response = app
@@ -1933,7 +1939,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .id;
-        crate::repository::event_repository::update_settings(&pool, event_id, true, false)
+        crate::repository::event_repository::update_settings(&pool, event_id, true, false, None)
             .await
             .unwrap();
         let app = app_router(pool.clone());
@@ -2007,11 +2013,20 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri("/admin/settings")
-                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(
+                        header::CONTENT_TYPE,
+                        "multipart/form-data; boundary=settings-checked-boundary",
+                    )
                     .header(header::COOKIE, session_cookie)
-                    .body(Body::from(format!(
-                        "csrf_token={csrf_token}&is_team_mode=on&require_answer_check=on"
-                    )))
+                    .body(Body::from({
+                        let boundary = "settings-checked-boundary";
+                        let mut body = Vec::new();
+                        body.extend(multipart_text_part(boundary, "csrf_token", &csrf_token));
+                        body.extend(multipart_text_part(boundary, "is_team_mode", "on"));
+                        body.extend(multipart_text_part(boundary, "require_answer_check", "on"));
+                        body.extend(multipart_finish(boundary));
+                        body
+                    }))
                     .unwrap(),
             )
             .await
@@ -2044,7 +2059,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .id;
-        crate::repository::event_repository::update_settings(&pool, event_id, true, true)
+        crate::repository::event_repository::update_settings(&pool, event_id, true, true, None)
             .await
             .unwrap();
         let app = app_router(pool.clone());
@@ -2071,9 +2086,18 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri("/admin/settings")
-                    .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                    .header(
+                        header::CONTENT_TYPE,
+                        "multipart/form-data; boundary=settings-unchecked-boundary",
+                    )
                     .header(header::COOKIE, session_cookie)
-                    .body(Body::from(format!("csrf_token={csrf_token}")))
+                    .body(Body::from({
+                        let boundary = "settings-unchecked-boundary";
+                        let mut body = Vec::new();
+                        body.extend(multipart_text_part(boundary, "csrf_token", &csrf_token));
+                        body.extend(multipart_finish(boundary));
+                        body
+                    }))
                     .unwrap(),
             )
             .await
@@ -2253,9 +2277,30 @@ mod tests {
             .unwrap();
         let session_cookie = extract_cookie(&login_response);
 
-        for body in [
-            "is_team_mode=on&require_answer_check=on".to_string(),
-            "csrf_token=wrong&is_team_mode=on&require_answer_check=on".to_string(),
+        for (boundary, body) in [
+            (
+                "settings-missing-csrf-boundary",
+                {
+                    let boundary = "settings-missing-csrf-boundary";
+                    let mut body = Vec::new();
+                    body.extend(multipart_text_part(boundary, "is_team_mode", "on"));
+                    body.extend(multipart_text_part(boundary, "require_answer_check", "on"));
+                    body.extend(multipart_finish(boundary));
+                    body
+                },
+            ),
+            (
+                "settings-wrong-csrf-boundary",
+                {
+                    let boundary = "settings-wrong-csrf-boundary";
+                    let mut body = Vec::new();
+                    body.extend(multipart_text_part(boundary, "csrf_token", "wrong"));
+                    body.extend(multipart_text_part(boundary, "is_team_mode", "on"));
+                    body.extend(multipart_text_part(boundary, "require_answer_check", "on"));
+                    body.extend(multipart_finish(boundary));
+                    body
+                },
+            ),
         ] {
             let response = app
                 .clone()
@@ -2263,7 +2308,10 @@ mod tests {
                     Request::builder()
                         .method("POST")
                         .uri("/admin/settings")
-                        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                        .header(
+                            header::CONTENT_TYPE,
+                            format!("multipart/form-data; boundary={boundary}"),
+                        )
                         .header(header::COOKIE, session_cookie.clone())
                         .body(Body::from(body))
                         .unwrap(),

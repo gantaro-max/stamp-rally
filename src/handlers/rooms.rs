@@ -49,6 +49,7 @@ struct RoomAddTemplate {
     quest_text: String,
     answer: String,
     hint_msg: String,
+    stamp_label: String,
     error_message: Option<&'static str>,
 }
 
@@ -71,6 +72,7 @@ struct AddTemplateValues {
     quest_text: String,
     answer: String,
     hint_msg: String,
+    stamp_label: String,
 }
 
 fn default_add_template_values() -> AddTemplateValues {
@@ -79,6 +81,7 @@ fn default_add_template_values() -> AddTemplateValues {
         quest_text: String::new(),
         answer: String::new(),
         hint_msg: String::new(),
+        stamp_label: String::new(),
     }
 }
 
@@ -99,6 +102,7 @@ async fn render_add_form(
         quest_text: values.quest_text,
         answer: values.answer,
         hint_msg: values.hint_msg,
+        stamp_label: values.stamp_label,
         error_message,
     };
 
@@ -114,6 +118,8 @@ struct RoomMultipartForm {
     answer: Option<String>,
     hint_msg: Option<String>,
     image_bytes: Option<Vec<u8>>,
+    stamp_label: String,
+    stamp_image_bytes: Option<Vec<u8>>,
     csrf_token: Option<String>,
 }
 
@@ -124,6 +130,7 @@ impl RoomMultipartForm {
             quest_text: self.quest_text.clone(),
             answer: self.answer.clone().unwrap_or_default(),
             hint_msg: self.hint_msg.clone().unwrap_or_default(),
+            stamp_label: self.stamp_label.clone(),
         }
     }
 }
@@ -153,6 +160,8 @@ pub async fn add(
         answer: form.answer,
         hint_msg: form.hint_msg,
         image_bytes: form.image_bytes,
+        stamp_label: form.stamp_label,
+        stamp_image_bytes: form.stamp_image_bytes,
     };
 
     match room_service::create(&pool, event.id, input).await {
@@ -162,6 +171,15 @@ pub async fn add(
                 session,
                 event.require_answer_check,
                 Some("部屋数の上限に達しています"),
+                values,
+            )
+            .await
+        }
+        Err(room_service::RoomError::StampLabelInvalid) => {
+            render_add_form(
+                session,
+                event.require_answer_check,
+                Some("スタンプ表示名は1〜4文字で入力してください"),
                 values,
             )
             .await
@@ -195,15 +213,21 @@ async fn parse_room_multipart(mut multipart: Multipart) -> Result<RoomMultipartF
         answer: None,
         hint_msg: None,
         image_bytes: None,
+        stamp_label: String::new(),
+        stamp_image_bytes: None,
         csrf_token: None,
     };
 
     while let Some(field) = multipart.next_field().await.map_err(|_| ())? {
         let name = field.name().unwrap_or_default().to_string();
-        if name == "image" {
+        if name == "image" || name == "stamp_image" {
             let bytes = field.bytes().await.map_err(|_| ())?;
             if !bytes.is_empty() {
-                form.image_bytes = Some(bytes.to_vec());
+                if name == "image" {
+                    form.image_bytes = Some(bytes.to_vec());
+                } else {
+                    form.stamp_image_bytes = Some(bytes.to_vec());
+                }
             }
             continue;
         }
@@ -213,6 +237,7 @@ async fn parse_room_multipart(mut multipart: Multipart) -> Result<RoomMultipartF
             "quest_text" => form.quest_text = value,
             "answer" => form.answer = non_empty(value),
             "hint_msg" => form.hint_msg = non_empty(value),
+            "stamp_label" => form.stamp_label = value.trim().to_string(),
             "csrf_token" => form.csrf_token = Some(value),
             _ => {}
         }
@@ -244,6 +269,7 @@ struct RoomEditTemplate {
     quest_text: String,
     answer: String,
     hint_msg: String,
+    stamp_label: String,
     error_message: Option<&'static str>,
 }
 
@@ -273,6 +299,7 @@ pub async fn edit_form(
             quest_text: room.quest_text,
             answer: room.answer.unwrap_or_default(),
             hint_msg: room.hint_msg.unwrap_or_default(),
+            stamp_label: room.stamp_label.unwrap_or_default(),
         },
     )
     .await
@@ -284,6 +311,7 @@ struct RoomEditTemplateValues {
     quest_text: String,
     answer: String,
     hint_msg: String,
+    stamp_label: String,
 }
 
 async fn render_edit_form(
@@ -304,6 +332,7 @@ async fn render_edit_form(
         quest_text: values.quest_text,
         answer: values.answer,
         hint_msg: values.hint_msg,
+        stamp_label: values.stamp_label,
         error_message,
     };
 
@@ -343,6 +372,7 @@ pub async fn update(
         quest_text: form.quest_text.clone(),
         answer: form.answer.clone().unwrap_or_default(),
         hint_msg: form.hint_msg.clone().unwrap_or_default(),
+        stamp_label: form.stamp_label.clone(),
     };
     let input = room_service::UpdateRoomInput {
         room_name: form.room_name,
@@ -350,11 +380,22 @@ pub async fn update(
         answer: form.answer,
         hint_msg: form.hint_msg,
         image_bytes: form.image_bytes,
+        stamp_label: form.stamp_label,
+        stamp_image_bytes: form.stamp_image_bytes,
     };
 
     match room_service::update(&pool, id, input).await {
         Ok(()) => redirect_to("/admin/rooms"),
         Err(room_service::RoomError::NotFound) => StatusCode::NOT_FOUND.into_response(),
+        Err(room_service::RoomError::StampLabelInvalid) => {
+            render_edit_form(
+                session,
+                event.require_answer_check,
+                Some("スタンプ表示名は1〜4文字で入力してください"),
+                values,
+            )
+            .await
+        }
         Err(room_service::RoomError::AnswerRequired) => {
             render_edit_form(
                 session,
@@ -420,6 +461,7 @@ mod tests {
             quest_text: String::new(),
             answer: String::new(),
             hint_msg: String::new(),
+            stamp_label: String::new(),
             error_message: None,
         };
 
