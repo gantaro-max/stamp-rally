@@ -82,6 +82,9 @@
   - `handlers` / `services` / `repository` の初期モジュール構成を追加
 
 ### Fixed
+- #25のマイグレーション（`players.stamp_card_token`追加）を本番TiDB Serverlessに適用する際に発生した2つの不具合を修正
+  - `ALTER TABLE players ADD COLUMN ... , ADD UNIQUE KEY ...`と1文にまとめていたところ、TiDBが列追加とインデックス追加を別々の内部DDLジョブとして扱うため、後半のインデックス作成時に追加したはずの列が認識されず`Unknown column`エラーで失敗した。`migrations/0003_players_stamp_card_token.sql`を2つの`ALTER TABLE`文に分割し、TiDBでは列追加とインデックス追加を1文にまとめない方針とした
+  - マイグレーション適用後、既存プレイヤー（列追加前に登録済みの参加者）の`stamp_card_token`が`NULL`のまま残り、`NULL`非許容の`String`型としてデコードしようとしたLINE Webhookが全既存プレイヤーに対して失敗する事象が発生した。本番DBに対し`UPDATE players SET stamp_card_token = UUID() WHERE stamp_card_token IS NULL;`を実行し既存行をバックフィルして解消。新規マイグレーションでNOT NULL列を追加する際は、既存行へのバックフィル手順も設計時点で用意しておく必要がある教訓を得た
 - #22の対策（DB/外部API呼び出しへのタイムアウト追加）をデプロイした後も、参加者への応答が返らない事象が再発した問題を修正。LINE Developers Consoleの「Webhookエラー統計」で`request_timeout`（LINEプラットフォーム自身がWebhookレスポンスを待ちきれずタイムアウトした）を確認し、`/callback`が署名検証→DBアクセス→LINE返信送信→200返却を同期的に行っているため、#22で追加した15秒のタイムアウトが発動する前にLINE側が先に配信失敗と判断してしまうことが原因と判明した（#23）
   - `/callback`は署名検証・JSONパースが完了した時点で即座に200を返し、イベントごとの実処理（DBアクセス・LINE返信送信）は`tokio::spawn`によるバックグラウンドタスクに切り離した。これによりレスポンス時間が署名検証・JSONパースのみに依存するようになり、DB・LINE API呼び出しがどれだけ遅延してもLINE側のタイムアウトに引っかからなくなる
   - 同一Webhookペイロードに複数イベントが含まれる場合に備え、ペイロード全体を1つのバックグラウンドタスクにまとめて処理する（`process_events`関数）。イベントごとに個別にタスクを起動すると、同一参加者からの連続した操作（例:「リセット」の直後に「開始」）が並行実行され送信順序を保てなくなるため、最終レビューで発見・修正した

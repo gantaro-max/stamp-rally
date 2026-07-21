@@ -607,6 +607,11 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
 - `player_repository::insert`は新たに`stamp_card_token: &str`を引数に取る（呼び出し元の`game_service`が`Uuid::new_v4().to_string()`で発行して渡す。`rooms.qr_uuid`を`room_service`が発行して`room_repository::insert`に渡す既存パターン、5節と同じ形）
 - `docs/database.md`の`players`テーブル定義にもこのカラムを反映する
 
+### 追記: 本番TiDB Serverlessへの適用で判明した2つの注意点
+
+- TiDBは`ALTER TABLE ... ADD COLUMN ..., ADD UNIQUE KEY ...`のように列追加とインデックス追加を1文にまとめると、内部的に別々のDDLジョブとして扱われ、後段のインデックス作成時に追加したはずの列が認識されず失敗することがある。マイグレーションファイルは2つの`ALTER TABLE`文に分割すること（`migrations/0003_players_stamp_card_token.sql`で修正済み）
+- マイグレーション適用直後は、既存行（列追加前から存在するレコード）のカラム値が`NULL`になる。`stamp_card_token`はアプリケーション上`NULL`を許容しない値として扱うため、既存プレイヤーの行に対して`UPDATE players SET stamp_card_token = UUID() WHERE stamp_card_token IS NULL;`のようなバックフィルを本番適用時に併せて実行する必要がある。以後、既存データがあるテーブルにNOT NULL相当のカラムを追加する場合は、マイグレーション設計時点でバックフィル手順もあわせて用意すること
+
 ### `stamp_card_service::render_png`
 
 - シグネチャ: `pub fn render_png(room_names: &[String], total_rooms: i64) -> Vec<u8>`（`room_names`は訪問順の部屋名の配列、`total_rooms`はそのイベントの登録済み部屋数）
