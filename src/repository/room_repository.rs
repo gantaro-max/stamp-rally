@@ -190,13 +190,20 @@ pub async fn find_by_qr_uuid(pool: &MySqlPool, qr_uuid: &str) -> Result<Option<R
     }))
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct VisitedRoomStamp {
+    pub room_name: String,
+    pub stamp_label: Option<String>,
+    pub stamp_image_id: Option<i32>,
+}
+
 pub async fn find_visited_room_names_ordered(
     pool: &MySqlPool,
     player_id: i32,
-) -> Result<Vec<String>, sqlx::Error> {
+) -> Result<Vec<VisitedRoomStamp>, sqlx::Error> {
     let rows = sqlx::query(
         r#"
-        SELECT rooms.room_name AS room_name
+        SELECT rooms.room_name AS room_name, rooms.stamp_label AS stamp_label, rooms.stamp_image_id AS stamp_image_id
         FROM visited_rooms
         JOIN rooms ON rooms.id = visited_rooms.room_id
         WHERE visited_rooms.player_id = ?
@@ -207,7 +214,15 @@ pub async fn find_visited_room_names_ordered(
     .fetch_all(pool)
     .await?;
 
-    rows.iter().map(|row| row.try_get("room_name")).collect()
+    rows.iter()
+        .map(|row| {
+            Ok(VisitedRoomStamp {
+                room_name: row.try_get("room_name")?,
+                stamp_label: row.try_get("stamp_label")?,
+                stamp_image_id: row.try_get("stamp_image_id")?,
+            })
+        })
+        .collect()
 }
 
 pub async fn find_random_unvisited(
@@ -401,9 +416,19 @@ mod tests {
     }
 
     #[sqlx::test]
-    async fn find_visited_room_names_ordered_returns_visit_order(pool: sqlx::MySqlPool) {
+    async fn find_visited_room_names_ordered_returns_visit_order_and_stamp_fields(
+        pool: sqlx::MySqlPool,
+    ) {
         let event_id = seed_event(&pool).await;
         let player_id = seed_player(&pool, event_id).await;
+        let stamp_image_id = crate::repository::room_image_repository::insert(
+            &pool,
+            "visited-stamp-image",
+            &[1, 2, 3],
+            "image/png",
+        )
+        .await
+        .unwrap();
         let room_a = super::insert(
             &pool,
             event_id,
@@ -412,8 +437,8 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
+            Some("一印"),
+            Some(stamp_image_id),
             "qr-visited-order-1",
         )
         .await
@@ -445,14 +470,17 @@ mod tests {
         .await
         .unwrap();
 
-        let room_names = super::find_visited_room_names_ordered(&pool, player_id)
+        let rooms = super::find_visited_room_names_ordered(&pool, player_id)
             .await
             .unwrap();
 
-        assert_eq!(
-            room_names,
-            vec!["2部屋目".to_string(), "1部屋目".to_string()]
-        );
+        assert_eq!(rooms.len(), 2);
+        assert_eq!(rooms[0].room_name, "2部屋目");
+        assert_eq!(rooms[0].stamp_label, None);
+        assert_eq!(rooms[0].stamp_image_id, None);
+        assert_eq!(rooms[1].room_name, "1部屋目");
+        assert_eq!(rooms[1].stamp_label.as_deref(), Some("一印"));
+        assert_eq!(rooms[1].stamp_image_id, Some(stamp_image_id));
     }
 
     #[sqlx::test]

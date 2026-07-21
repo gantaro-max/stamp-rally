@@ -42,6 +42,21 @@ pub async fn find_uuid_by_id(pool: &MySqlPool, id: i32) -> Result<Option<String>
     Ok(Some(row.try_get("uuid")?))
 }
 
+pub async fn find_by_id(
+    pool: &MySqlPool,
+    id: i32,
+) -> Result<Option<(Vec<u8>, String)>, sqlx::Error> {
+    let Some(row) = sqlx::query("SELECT data, mime_type FROM room_images WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some((row.try_get("data")?, row.try_get("mime_type")?)))
+}
+
 pub async fn find_by_uuid(
     pool: &MySqlPool,
     uuid: &str,
@@ -73,6 +88,26 @@ mod tests {
 
         assert_eq!(found_data, data);
         assert_eq!(mime_type, "image/jpeg");
+    }
+
+    #[sqlx::test]
+    async fn finds_image_by_id(pool: sqlx::MySqlPool) {
+        let data = b"png-bytes";
+        let image_id = super::insert(&pool, "image-id-uuid", data, "image/png")
+            .await
+            .unwrap();
+
+        let (found_data, mime_type) = super::find_by_id(&pool, image_id).await.unwrap().unwrap();
+
+        assert_eq!(found_data, data);
+        assert_eq!(mime_type, "image/png");
+    }
+
+    #[sqlx::test]
+    async fn find_by_id_returns_none_for_missing_id(pool: sqlx::MySqlPool) {
+        let image = super::find_by_id(&pool, 123_456).await.unwrap();
+
+        assert!(image.is_none());
     }
 
     #[sqlx::test]
