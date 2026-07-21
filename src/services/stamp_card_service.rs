@@ -79,8 +79,9 @@ fn truncate_room_name(name: &str) -> String {
 mod tests {
     use image::{GenericImageView, ImageFormat, Rgba};
 
-    const STAMPED_FILL: Rgba<u8> = Rgba([0xB5, 0x4B, 0x3A, 255]);
-    const BACKGROUND: Rgba<u8> = Rgba([255, 255, 255, 255]);
+    const STAMP_COLOR: Rgba<u8> = Rgba([0xB5, 0x4B, 0x3A, 255]);
+    const CARD_BACKGROUND: Rgba<u8> = Rgba([0xFB, 0xF3, 0xE7, 255]);
+    const EMPTY_BORDER: Rgba<u8> = Rgba([0xE2, 0xE4, 0xE9, 255]);
 
     #[test]
     fn render_empty_card_returns_png_with_expected_dimensions() {
@@ -88,32 +89,56 @@ mod tests {
 
         assert_eq!(image::guess_format(&png).unwrap(), ImageFormat::Png);
         let image = image::load_from_memory(&png).unwrap();
-        assert_eq!(image.dimensions(), (520, 540));
+        assert_eq!(image.dimensions(), (520, 600));
     }
 
     #[test]
-    fn stamped_first_cell_is_filled_with_stamp_color() {
+    fn stamped_first_cell_has_outer_ring_at_top() {
         let png = super::render_png(&["図書室".to_string()], 15);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(32, 32), STAMPED_FILL);
+        assert_eq!(*image.get_pixel(100, 88), STAMP_COLOR);
     }
 
     #[test]
-    fn empty_first_cell_center_remains_background() {
+    fn stamped_first_cell_has_inner_ring_at_top() {
+        let png = super::render_png(&["図書室".to_string()], 15);
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+
+        assert_eq!(*image.get_pixel(100, 96), STAMP_COLOR);
+    }
+
+    #[test]
+    fn stamped_first_cell_keeps_gap_between_rings_unfilled() {
+        let png = super::render_png(&["図書室".to_string()], 15);
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+
+        assert_eq!(*image.get_pixel(100, 93), CARD_BACKGROUND);
+    }
+
+    #[test]
+    fn empty_first_cell_has_ring_outline_at_top() {
         let png = super::render_png(&[], 15);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 70), BACKGROUND);
+        assert_eq!(*image.get_pixel(100, 88), EMPTY_BORDER);
     }
 
     #[test]
-    fn stamped_cells_are_filled_in_visit_order() {
+    fn empty_first_cell_center_remains_card_background() {
+        let png = super::render_png(&[], 15);
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+
+        assert_eq!(*image.get_pixel(100, 130), CARD_BACKGROUND);
+    }
+
+    #[test]
+    fn stamped_cells_are_ringed_in_visit_order() {
         let png = super::render_png(&["A".to_string(), "B".to_string(), "C".to_string()], 5);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(352, 32), STAMPED_FILL);
-        assert_eq!(*image.get_pixel(100, 170), BACKGROUND);
+        assert_eq!(*image.get_pixel(420, 88), STAMP_COLOR);
+        assert_eq!(*image.get_pixel(100, 188), EMPTY_BORDER);
     }
 
     #[test]
@@ -122,7 +147,53 @@ mod tests {
 
         assert_eq!(image::guess_format(&png).unwrap(), ImageFormat::Png);
         let image = image::load_from_memory(&png).unwrap();
-        assert_eq!(image.dimensions(), (520, 140));
+        assert_eq!(image.dimensions(), (520, 200));
+    }
+
+    #[test]
+    fn split_stamp_label_lines_keeps_short_labels_on_one_line() {
+        assert_eq!(super::split_stamp_label_lines("図書室"), vec!["図書室"]);
+    }
+
+    #[test]
+    fn split_stamp_label_lines_splits_long_labels_with_more_chars_on_first_line() {
+        assert_eq!(
+            super::split_stamp_label_lines("とても長い…"),
+            vec!["とても長", "い…"]
+        );
+    }
+
+    #[test]
+    fn stamp_rotation_degrees_is_deterministic_and_bounded() {
+        let first = super::stamp_rotation_degrees("図書室");
+        let second = super::stamp_rotation_degrees("図書室");
+
+        assert_eq!(first, second);
+        assert!((-8.0..=8.0).contains(&first));
+    }
+
+    #[test]
+    fn title_area_point_away_from_text_and_frame_is_card_background() {
+        let png = super::render_png(&[], 15);
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+
+        assert_eq!(*image.get_pixel(40, 40), CARD_BACKGROUND);
+    }
+
+    #[test]
+    fn outer_card_frame_is_stamp_color() {
+        let png = super::render_png(&[], 15);
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+
+        assert_eq!(*image.get_pixel(260, 10), STAMP_COLOR);
+    }
+
+    #[test]
+    fn inner_card_frame_is_stamp_color() {
+        let png = super::render_png(&[], 15);
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+
+        assert_eq!(*image.get_pixel(260, 16), STAMP_COLOR);
     }
 
     #[test]
