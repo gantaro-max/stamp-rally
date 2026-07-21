@@ -679,7 +679,7 @@ pub fn render_png(
 - `handlers::image`（画像配信ハンドラーと同じファイル）に追加する。既存の`GET /public/image/{uuid}`と同様、認証不要
 - `token`（`players.stamp_card_token`）に一致するプレイヤーが存在しなければ404を返す（`/public/image/{uuid}`が該当UUID無しで404を返すのと同じパターン）
 - 存在すれば、そのプレイヤーの訪問済み部屋名（`visited_rooms`を`visited_at`昇順で`rooms`と結合、新規`room_repository::find_visited_room_names_ordered`）と、そのイベントの登録済み部屋数（`room_repository::count`）を取得し、`stamp_card_service::render_png(&room_names, total_rooms)`の結果を`Content-Type: image/png`で返す
-- **DBアクセス（トークン検索・訪問済み部屋名取得・部屋数取得の3クエリ）は`game_service::with_db_call_timeout`（21節）でラップする。** このエンドポイントは部屋案内・「スタンプ状況」コマンドのたびにLINE側から取得される未認証の公開エンドポイントであり、`/callback`・`/liff/checkin`と同様に高頻度・未認証な経路である。21節が防ごうとしたのと同じ障害（DBコネクションが無応答のまま滞留しプールが枯渇、他の参加者の処理まで巻き込む）が起こりうるため、他の2エンドポイントと同じ保護を適用する
+- **DBアクセス（トークン検索・訪問済み部屋名取得・部屋数取得・イベント取得の4クエリ）は`game_service::with_db_call_timeout`（21節）でラップする。** このエンドポイントは部屋案内・「スタンプ状況」コマンドのたびにLINE側から取得される未認証の公開エンドポイントであり、`/callback`・`/liff/checkin`と同様に高頻度・未認証な経路である。21節が防ごうとしたのと同じ障害（DBコネクションが無応答のまま滞留しプールが枯渇、他の参加者の処理まで巻き込む）が起こりうるため、他の2エンドポイントと同じ保護を適用する
 - スタンプカードのフォント（`FontRef::try_from_slice`によるパース）はリクエストのたびに行わず、プロセス起動後に1回だけ行い使い回す（`stamp_card_service`内で`static`として保持する）。フォントは約5〜6MBあり、毎リクエストでの再パースは無視できないCPUコストになるため
 - レスポンスに`Cache-Control: private, max-age=60`を付与する（必須ではないが、同一プレイヤーが短時間に「スタンプ状況」を連打した場合の重複描画を軽減する）
 

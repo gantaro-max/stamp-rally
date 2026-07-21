@@ -40,6 +40,8 @@ Rust（Axum + Tokio） / sqlx（MySQL） / Askama + Bootstrap 5 / Argon2 / LINE 
 
 ローカルDBは `.devcontainer/compose.yaml` の `db` サービス（MySQL 8.0）が自動起動します。
 
+管理画面（`http://localhost:${APP_HOST_PORT:-8099}/auth/login`）のログインパスワードは、`.env.example` に設定済みのローカル開発専用値（`ADMIN_PASSWORD=stamprally_dev_admin_pass`）を使用します。本番（Koyeb）の管理者パスワードとは別物であり、使い回さないでください。
+
 ## 本番デプロイ（Koyeb）
 
 デプロイ構成の設計判断（ビルド方式・DB・環境変数・セッション等）は [docs/architecture.md 18節](docs/architecture.md#18-デプロイ構成koyeb) を参照。ここでは実際にデプロイする際の作業手順のみをまとめる。
