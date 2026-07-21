@@ -499,9 +499,22 @@ mod tests {
                 room_name,
                 quest_text,
                 image_url,
+                ..
             } => (intro, room_name, quest_text, image_url),
             ReplyMessage::Text(value) => panic!("expected quest reply: {value}"),
+            ReplyMessage::StampStatus { image_url } => panic!("expected quest reply: {image_url}"),
             ReplyMessage::Cleared { elapsed } => panic!("expected quest reply: {elapsed}"),
+        }
+    }
+
+    fn stamp_status(reply: ReplyMessage) -> String {
+        match reply {
+            ReplyMessage::StampStatus { image_url } => image_url,
+            ReplyMessage::Text(value) => panic!("expected stamp status reply: {value}"),
+            ReplyMessage::Quest { room_name, .. } => {
+                panic!("expected stamp status reply: {room_name}")
+            }
+            ReplyMessage::Cleared { elapsed } => panic!("expected stamp status reply: {elapsed}"),
         }
     }
 
@@ -560,6 +573,65 @@ mod tests {
         assert!(image_url.is_none());
         assert!(player.current_room_id.is_some());
         assert!(!pending_exists(&pool, "line-name", event_id).await);
+    }
+
+    #[sqlx::test]
+    async fn first_quest_reply_contains_stamp_card_url_with_player_token(pool: sqlx::MySqlPool) {
+        let event_id = set_event_flags(&pool, false, false).await;
+        seed_room(&pool, event_id, "Library", None, None).await;
+        insert_pending(&pool, "line-stamp-first", event_id).await;
+
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-stamp-first", "Alice")
+            .await
+            .unwrap();
+        let player = crate::repository::player_repository::find_by_line_user_and_event(
+            &pool,
+            "line-stamp-first",
+            event_id,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        let ReplyMessage::Quest { stamp_card_url, .. } = reply else {
+            panic!("expected quest reply");
+        };
+        assert_eq!(
+            stamp_card_url,
+            format!(
+                "{PUBLIC_BASE_URL}/public/stamp-card/{}",
+                player.stamp_card_token
+            )
+        );
+    }
+
+    #[sqlx::test]
+    async fn registered_start_reuses_existing_stamp_card_token(pool: sqlx::MySqlPool) {
+        let event_id = set_event_flags(&pool, false, false).await;
+        seed_player_with_room(&pool, event_id, "line-stamp-start", false).await;
+        let player = crate::repository::player_repository::find_by_line_user_and_event(
+            &pool,
+            "line-stamp-start",
+            event_id,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-stamp-start", "開始")
+            .await
+            .unwrap();
+
+        let ReplyMessage::Quest { stamp_card_url, .. } = reply else {
+            panic!("expected quest reply");
+        };
+        assert_eq!(
+            stamp_card_url,
+            format!(
+                "{PUBLIC_BASE_URL}/public/stamp-card/{}",
+                player.stamp_card_token
+            )
+        );
     }
 
     #[sqlx::test]
@@ -775,6 +847,81 @@ mod tests {
     }
 
     #[sqlx::test]
+    async fn registered_player_can_request_stamp_status(pool: sqlx::MySqlPool) {
+        let event_id = set_event_flags(&pool, false, false).await;
+        seed_player_with_room(&pool, event_id, "line-stamp-status", false).await;
+        let player = crate::repository::player_repository::find_by_line_user_and_event(
+            &pool,
+            "line-stamp-status",
+            event_id,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        let reply =
+            super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-stamp-status", "スタンプ状況")
+                .await
+                .unwrap();
+
+        assert_eq!(
+            stamp_status(reply),
+            format!(
+                "{PUBLIC_BASE_URL}/public/stamp-card/{}",
+                player.stamp_card_token
+            )
+        );
+    }
+
+    #[sqlx::test]
+    async fn unregistered_stamp_status_prompts_start(pool: sqlx::MySqlPool) {
+        set_event_flags(&pool, false, false).await;
+
+        let reply = super::handle_text_message(
+            &pool,
+            PUBLIC_BASE_URL,
+            "line-stamp-missing",
+            "スタンプ状況",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(text(reply), "『開始』と送信して参加登録してください。");
+    }
+
+    #[sqlx::test]
+    async fn finished_stamp_status_returns_finished_message(pool: sqlx::MySqlPool) {
+        let event_id = set_event_flags(&pool, false, false).await;
+        let (player_id, _room_id) =
+            seed_player_with_room(&pool, event_id, "line-stamp-finished", false).await;
+        crate::repository::player_repository::mark_finished(&pool, player_id)
+            .await
+            .unwrap();
+
+        let reply = super::handle_text_message(
+            &pool,
+            PUBLIC_BASE_URL,
+            "line-stamp-finished",
+            "スタンプ状況",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(text(reply), "クリア済みです。最初の部屋に戻ってください。");
+    }
+
+    #[sqlx::test]
+    async fn help_includes_stamp_status_command(pool: sqlx::MySqlPool) {
+        set_event_flags(&pool, false, false).await;
+
+        let reply = super::handle_text_message(&pool, PUBLIC_BASE_URL, "line-help-stamp", "ヘルプ")
+            .await
+            .unwrap();
+
+        assert!(text(reply).contains("スタンプ状況"));
+    }
+
+    #[sqlx::test]
     async fn hint_is_unavailable_without_answer_check(pool: sqlx::MySqlPool) {
         let event_id = set_event_flags(&pool, false, false).await;
         seed_player_with_room(&pool, event_id, "line-hint-off", false).await;
@@ -985,6 +1132,43 @@ mod tests {
             panic!("expected next quest outcome");
         };
         assert_eq!(intro, "【Library】クリアおめでとうございます。次の部屋は");
+    }
+
+    #[sqlx::test]
+    async fn checkin_next_quest_reuses_existing_stamp_card_token(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let current_room = seed_named_room(&pool, event_id, "Library", "qr-stamp-current").await;
+        seed_named_room(&pool, event_id, "Gym", "qr-stamp-next").await;
+        seed_player_current_room(&pool, event_id, "line-stamp-checkin", current_room).await;
+        let before = crate::repository::player_repository::find_by_line_user_and_event(
+            &pool,
+            "line-stamp-checkin",
+            event_id,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        let outcome = super::checkin(
+            &pool,
+            PUBLIC_BASE_URL,
+            "line-stamp-checkin",
+            "qr-stamp-current",
+        )
+        .await
+        .unwrap();
+
+        let super::CheckinOutcome::NextQuest(ReplyMessage::Quest { stamp_card_url, .. }) = outcome
+        else {
+            panic!("expected next quest outcome");
+        };
+        assert_eq!(
+            stamp_card_url,
+            format!(
+                "{PUBLIC_BASE_URL}/public/stamp-card/{}",
+                before.stamp_card_token
+            )
+        );
     }
 
     #[sqlx::test]

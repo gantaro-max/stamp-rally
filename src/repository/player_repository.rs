@@ -217,6 +217,41 @@ mod tests {
     }
 
     #[sqlx::test]
+    async fn inserted_player_keeps_stamp_card_token(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+
+        super::insert(&pool, "line-stamp-token", event_id, "Alice", "token-abc")
+            .await
+            .unwrap();
+        let player = super::find_by_line_user_and_event(&pool, "line-stamp-token", event_id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(player.stamp_card_token, "token-abc");
+    }
+
+    #[sqlx::test]
+    async fn find_by_stamp_card_token_returns_matching_player(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let player_id = super::insert(&pool, "line-stamp-find", event_id, "Alice", "token-abc")
+            .await
+            .unwrap();
+
+        let player = super::find_by_stamp_card_token(&pool, "token-abc")
+            .await
+            .unwrap()
+            .unwrap();
+        let missing = super::find_by_stamp_card_token(&pool, "missing-token")
+            .await
+            .unwrap();
+
+        assert_eq!(player.id, player_id);
+        assert_eq!(player.line_user_id, "line-stamp-find");
+        assert!(missing.is_none());
+    }
+
+    #[sqlx::test]
     async fn update_current_room_sets_room_and_resets_answer_verified(pool: sqlx::MySqlPool) {
         let event_id = seed_event(&pool).await;
         let room_id = seed_room(&pool, event_id).await;

@@ -62,6 +62,90 @@ mod tests {
         assert_eq!(&body[..], data);
     }
 
+    async fn seed_event(pool: &sqlx::MySqlPool) -> i32 {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        crate::repository::event_repository::find_singleton(pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id
+    }
+
+    #[sqlx::test]
+    async fn public_stamp_card_returns_png_for_valid_token(pool: sqlx::MySqlPool) {
+        let event_id = seed_event(&pool).await;
+        let room_id = crate::repository::room_repository::insert(
+            &pool,
+            event_id,
+            "Library",
+            "Quest",
+            None,
+            None,
+            None,
+            "qr-stamp-handler",
+        )
+        .await
+        .unwrap();
+        let player_id = crate::repository::player_repository::insert(
+            &pool,
+            "line-stamp-handler",
+            event_id,
+            "Alice",
+            "stamp-token-handler",
+        )
+        .await
+        .unwrap();
+        crate::repository::player_repository::insert_visited_room(&pool, player_id, room_id)
+            .await
+            .unwrap();
+        let app = Router::new()
+            .route("/public/stamp-card/{token}", get(super::stamp_card))
+            .with_state(pool);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/public/stamp-card/stamp-token-handler")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "image/png"
+        );
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(image::guess_format(&body).unwrap(), image::ImageFormat::Png);
+    }
+
+    #[sqlx::test]
+    async fn public_stamp_card_returns_not_found_for_missing_token(pool: sqlx::MySqlPool) {
+        let app = Router::new()
+            .route("/public/stamp-card/{token}", get(super::stamp_card))
+            .with_state(pool);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/public/stamp-card/missing-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
     #[sqlx::test]
     async fn public_image_returns_not_found_for_missing_uuid(pool: sqlx::MySqlPool) {
         let app = Router::new()

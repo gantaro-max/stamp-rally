@@ -319,6 +319,18 @@ mod tests {
     }
 
     #[test]
+    fn build_stamp_status_image_message_returns_line_image_json() {
+        assert_eq!(
+            super::build_stamp_status_image_message("https://example.test/stamp.png"),
+            json!({
+                "type": "image",
+                "originalContentUrl": "https://example.test/stamp.png",
+                "previewImageUrl": "https://example.test/stamp.png"
+            })
+        );
+    }
+
+    #[test]
     fn build_quest_flex_message_includes_hero_when_image_url_is_present() {
         let message = super::build_quest_flex_message(
             "最初の部屋は",
@@ -418,15 +430,53 @@ mod tests {
     }
 
     #[test]
-    fn to_line_message_passes_liff_id_to_quest_message() {
+    fn to_line_messages_builds_quest_and_stamp_card_image_messages() {
         let reply = crate::services::game_service::ReplyMessage::Quest {
             intro: "現在向かっている部屋は".to_string(),
             room_name: "Library".to_string(),
             quest_text: "Find the red book".to_string(),
             image_url: None,
+            stamp_card_url: "https://example.test/public/stamp-card/token".to_string(),
         };
 
-        let message = super::to_line_message(&reply, "quest-liff-id");
+        let messages = super::to_line_messages(&reply, "quest-liff-id");
+
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["type"], "flex");
+        assert_eq!(
+            messages[1],
+            super::build_stamp_status_image_message("https://example.test/public/stamp-card/token")
+        );
+    }
+
+    #[test]
+    fn to_line_messages_builds_stamp_status_image_message() {
+        let reply = crate::services::game_service::ReplyMessage::StampStatus {
+            image_url: "https://example.test/public/stamp-card/token".to_string(),
+        };
+
+        let messages = super::to_line_messages(&reply, "ignored-liff-id");
+
+        assert_eq!(
+            messages,
+            vec![super::build_stamp_status_image_message(
+                "https://example.test/public/stamp-card/token"
+            )]
+        );
+    }
+
+    #[test]
+    fn to_line_messages_passes_liff_id_to_quest_message() {
+        let reply = crate::services::game_service::ReplyMessage::Quest {
+            intro: "現在向かっている部屋は".to_string(),
+            room_name: "Library".to_string(),
+            quest_text: "Find the red book".to_string(),
+            image_url: None,
+            stamp_card_url: "https://example.test/public/stamp-card/token".to_string(),
+        };
+
+        let messages = super::to_line_messages(&reply, "quest-liff-id");
+        let message = &messages[0];
 
         assert_eq!(message["type"], "flex");
         assert_eq!(
@@ -456,26 +506,26 @@ mod tests {
     }
 
     #[test]
-    fn to_line_message_builds_text_messages() {
+    fn to_line_messages_builds_text_messages() {
         let next = crate::services::game_service::ReplyMessage::Text(
             "次の部屋をLINEで確認してください。".to_string(),
         );
 
         assert_eq!(
-            super::to_line_message(&next, "ignored-liff-id"),
-            json!({"type": "text", "text": "次の部屋をLINEで確認してください。"})
+            super::to_line_messages(&next, "ignored-liff-id"),
+            vec![json!({"type": "text", "text": "次の部屋をLINEで確認してください。"})]
         );
     }
 
     #[test]
-    fn to_line_message_builds_cleared_flex_message() {
+    fn to_line_messages_builds_cleared_flex_message() {
         let reply = crate::services::game_service::ReplyMessage::Cleared {
             elapsed: "1:23".to_string(),
         };
 
         assert_eq!(
-            super::to_line_message(&reply, "ignored-liff-id"),
-            super::build_cleared_flex_message("1:23")
+            super::to_line_messages(&reply, "ignored-liff-id"),
+            vec![super::build_cleared_flex_message("1:23")]
         );
     }
 }
