@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- 管理画面ダッシュボードにLINE公式アカウントの友だち追加QRコードを表示（#24）
+  - `GET /admin/line-qr`：環境変数`LINE_ADD_FRIEND_URL`（LINE公式アカウントマネージャーで発行される友だち追加URL）を、既存の`qr_service::render_png`（部屋QRと共通の仕組み）でその場にPNG生成して返す。`require_admin`配下、`LINE_ADD_FRIEND_URL`未設定時は404
+  - `LINE_ADD_FRIEND_URL`は他のLINE関連環境変数と異なり、未設定でも起動をブロックしない。LINE公式アカウントの発行タイミングより前に他の機能をデプロイ・運用できるようにするため
+  - ダッシュボードに4枚目のstat-cardとしてQR画像・友だち追加URLのテキストを表示。未設定時は「LINE_ADD_FRIEND_URL が未設定です」という案内文のみ表示
+  - 設計は[docs/architecture.md 22節「ダッシュボードの友だち追加QRコード」](docs/architecture.md#22-ダッシュボードの友だち追加qrコードget-adminline-qr)を参照
 - 管理画面（`/admin/*`・`/auth/login`）にデザインシステムを導入（#21）
   - CSSカスタムプロパティによる独自カラートークン（スタンプのインクをイメージした朱色系プライマリカラー`#B54B3A`等）を`Bootstrap 5.3`の変数上書きで適用。新規の静的ファイル配信基盤・Webフォントは追加せず、既存テンプレートへのインライン`<style>`のみで実現
   - ダッシュボードを3枚のstat-cardレイアウト（部屋登録進捗のプログレスバー・イベント設定バッジ・ランキング導線）に刷新。各画面の見出しを`page-header`パターンに統一し、テーブルの縞模様を除去、ランキング1位に強調バッジを追加
