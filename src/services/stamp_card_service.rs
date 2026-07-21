@@ -212,15 +212,30 @@ fn stamp_rotation_degrees(name: &str) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use image::{GenericImageView, ImageFormat, Rgba};
+    use std::sync::Arc;
+
+    use image::{DynamicImage, GenericImageView, ImageBuffer, ImageFormat, Rgba};
 
     const STAMP_COLOR: Rgba<u8> = Rgba([0xB5, 0x4B, 0x3A, 255]);
     const CARD_BACKGROUND: Rgba<u8> = Rgba([0xFB, 0xF3, 0xE7, 255]);
     const EMPTY_BORDER: Rgba<u8> = Rgba([0xE2, 0xE4, 0xE9, 255]);
+    const CUSTOM_STAMP_COLOR: Rgba<u8> = Rgba([0x21, 0x9E, 0xBC, 255]);
+    const CUSTOM_BACKGROUND_COLOR: Rgba<u8> = Rgba([0x24, 0x6A, 0x73, 255]);
+
+    fn stamp(label: &str) -> super::StampCell {
+        super::StampCell {
+            label: label.to_string(),
+            custom_image: None,
+        }
+    }
+
+    fn solid_image(color: Rgba<u8>, width: u32, height: u32) -> DynamicImage {
+        DynamicImage::ImageRgba8(ImageBuffer::from_pixel(width, height, color))
+    }
 
     #[test]
     fn render_empty_card_returns_png_with_expected_dimensions() {
-        let png = super::render_png(&[], 15);
+        let png = super::render_png(&[], 15, None);
 
         assert_eq!(image::guess_format(&png).unwrap(), ImageFormat::Png);
         let image = image::load_from_memory(&png).unwrap();
@@ -229,7 +244,7 @@ mod tests {
 
     #[test]
     fn stamped_first_cell_has_outer_ring_at_top() {
-        let png = super::render_png(&["図書室".to_string()], 15);
+        let png = super::render_png(&[stamp("図書室")], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
         assert_eq!(*image.get_pixel(100, 88), STAMP_COLOR);
@@ -237,7 +252,7 @@ mod tests {
 
     #[test]
     fn stamped_first_cell_has_inner_ring_at_top() {
-        let png = super::render_png(&["図書室".to_string()], 15);
+        let png = super::render_png(&[stamp("図書室")], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
         assert_eq!(*image.get_pixel(100, 96), STAMP_COLOR);
@@ -245,7 +260,7 @@ mod tests {
 
     #[test]
     fn stamped_first_cell_keeps_gap_between_rings_unfilled() {
-        let png = super::render_png(&["図書室".to_string()], 15);
+        let png = super::render_png(&[stamp("図書室")], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
         assert_eq!(*image.get_pixel(100, 93), CARD_BACKGROUND);
@@ -253,7 +268,7 @@ mod tests {
 
     #[test]
     fn empty_first_cell_has_ring_outline_at_top() {
-        let png = super::render_png(&[], 15);
+        let png = super::render_png(&[], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
         assert_eq!(*image.get_pixel(100, 88), EMPTY_BORDER);
@@ -261,7 +276,7 @@ mod tests {
 
     #[test]
     fn empty_first_cell_center_remains_card_background() {
-        let png = super::render_png(&[], 15);
+        let png = super::render_png(&[], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
         assert_eq!(*image.get_pixel(100, 130), CARD_BACKGROUND);
@@ -269,7 +284,7 @@ mod tests {
 
     #[test]
     fn stamped_cells_are_ringed_in_visit_order() {
-        let png = super::render_png(&["A".to_string(), "B".to_string(), "C".to_string()], 5);
+        let png = super::render_png(&[stamp("A"), stamp("B"), stamp("C")], 5, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
         assert_eq!(*image.get_pixel(420, 88), STAMP_COLOR);
@@ -278,7 +293,7 @@ mod tests {
 
     #[test]
     fn zero_total_rooms_renders_one_cell_without_panicking() {
-        let png = super::render_png(&[], 0);
+        let png = super::render_png(&[], 0, None);
 
         assert_eq!(image::guess_format(&png).unwrap(), ImageFormat::Png);
         let image = image::load_from_memory(&png).unwrap();
@@ -309,7 +324,7 @@ mod tests {
 
     #[test]
     fn title_area_point_away_from_text_and_frame_is_card_background() {
-        let png = super::render_png(&[], 15);
+        let png = super::render_png(&[], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
         assert_eq!(*image.get_pixel(40, 40), CARD_BACKGROUND);
@@ -317,7 +332,7 @@ mod tests {
 
     #[test]
     fn outer_card_frame_is_stamp_color() {
-        let png = super::render_png(&[], 15);
+        let png = super::render_png(&[], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
         assert_eq!(*image.get_pixel(260, 10), STAMP_COLOR);
@@ -325,10 +340,51 @@ mod tests {
 
     #[test]
     fn inner_card_frame_is_stamp_color() {
-        let png = super::render_png(&[], 15);
+        let png = super::render_png(&[], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
         assert_eq!(*image.get_pixel(260, 16), STAMP_COLOR);
+    }
+
+    #[test]
+    fn custom_stamp_image_replaces_generated_stamp_at_cell_center() {
+        let custom = Arc::new(solid_image(CUSTOM_STAMP_COLOR, 96, 96));
+        let png = super::render_png(
+            &[super::StampCell {
+                label: "図書室".to_string(),
+                custom_image: Some(custom),
+            }],
+            15,
+            None,
+        );
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+
+        assert_eq!(*image.get_pixel(100, 130), CUSTOM_STAMP_COLOR);
+    }
+
+    #[test]
+    fn stamp_without_custom_image_keeps_generated_stamp_ring() {
+        let png = super::render_png(&[stamp("図書室")], 15, None);
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+
+        assert_eq!(*image.get_pixel(100, 88), STAMP_COLOR);
+    }
+
+    #[test]
+    fn custom_card_background_replaces_default_background() {
+        let background = solid_image(CUSTOM_BACKGROUND_COLOR, 520, 600);
+        let png = super::render_png(&[], 15, Some(&background));
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+
+        assert_eq!(*image.get_pixel(40, 40), CUSTOM_BACKGROUND_COLOR);
+    }
+
+    #[test]
+    fn missing_card_background_keeps_default_background() {
+        let png = super::render_png(&[], 15, None);
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+
+        assert_eq!(*image.get_pixel(40, 40), CARD_BACKGROUND);
     }
 
     #[test]

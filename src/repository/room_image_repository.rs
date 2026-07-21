@@ -76,6 +76,26 @@ mod tests {
     }
 
     #[sqlx::test]
+    async fn finds_image_by_id(pool: sqlx::MySqlPool) {
+        let data = b"png-bytes";
+        let image_id = super::insert(&pool, "image-id-uuid", data, "image/png")
+            .await
+            .unwrap();
+
+        let (found_data, mime_type) = super::find_by_id(&pool, image_id).await.unwrap().unwrap();
+
+        assert_eq!(found_data, data);
+        assert_eq!(mime_type, "image/png");
+    }
+
+    #[sqlx::test]
+    async fn find_by_id_returns_none_for_missing_id(pool: sqlx::MySqlPool) {
+        let image = super::find_by_id(&pool, 123_456).await.unwrap();
+
+        assert!(image.is_none());
+    }
+
+    #[sqlx::test]
     async fn find_by_uuid_returns_none_for_missing_uuid(pool: sqlx::MySqlPool) {
         let image = super::find_by_uuid(&pool, "missing-uuid").await.unwrap();
 

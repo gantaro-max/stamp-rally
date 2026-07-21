@@ -401,9 +401,19 @@ mod tests {
     }
 
     #[sqlx::test]
-    async fn find_visited_room_names_ordered_returns_visit_order(pool: sqlx::MySqlPool) {
+    async fn find_visited_room_names_ordered_returns_visit_order_and_stamp_fields(
+        pool: sqlx::MySqlPool,
+    ) {
         let event_id = seed_event(&pool).await;
         let player_id = seed_player(&pool, event_id).await;
+        let stamp_image_id = crate::repository::room_image_repository::insert(
+            &pool,
+            "visited-stamp-image",
+            &[1, 2, 3],
+            "image/png",
+        )
+        .await
+        .unwrap();
         let room_a = super::insert(
             &pool,
             event_id,
@@ -412,8 +422,8 @@ mod tests {
             None,
             None,
             None,
-            None,
-            None,
+            Some("一印"),
+            Some(stamp_image_id),
             "qr-visited-order-1",
         )
         .await
@@ -445,14 +455,17 @@ mod tests {
         .await
         .unwrap();
 
-        let room_names = super::find_visited_room_names_ordered(&pool, player_id)
+        let rooms = super::find_visited_room_names_ordered(&pool, player_id)
             .await
             .unwrap();
 
-        assert_eq!(
-            room_names,
-            vec!["2部屋目".to_string(), "1部屋目".to_string()]
-        );
+        assert_eq!(rooms.len(), 2);
+        assert_eq!(rooms[0].room_name, "2部屋目");
+        assert_eq!(rooms[0].stamp_label, None);
+        assert_eq!(rooms[0].stamp_image_id, None);
+        assert_eq!(rooms[1].room_name, "1部屋目");
+        assert_eq!(rooms[1].stamp_label.as_deref(), Some("一印"));
+        assert_eq!(rooms[1].stamp_image_id, Some(stamp_image_id));
     }
 
     #[sqlx::test]
