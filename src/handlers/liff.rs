@@ -194,10 +194,11 @@ mod tests {
             &format!("Quest for {name}"),
             Some("red"),
             Some("hint"),
-            None,            None,
             None,
-
-            qr_uuid,)
+            None,
+            None,
+            qr_uuid,
+        )
         .await
         .unwrap()
     }

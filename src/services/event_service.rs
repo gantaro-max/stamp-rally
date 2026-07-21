@@ -47,10 +47,11 @@ pub async fn current(pool: &MySqlPool) -> Result<event_repository::Event, EventE
 pub async fn update_settings(pool: &MySqlPool, input: SettingsInput) -> Result<(), EventError> {
     let event = current(pool).await?;
     let old_background_image_id = event.stamp_card_background_image_id;
-    let background_image_id = match insert_uploaded_image(pool, input.stamp_card_background_image_bytes).await? {
-        Some(new_image_id) => Some(new_image_id),
-        None => old_background_image_id,
-    };
+    let background_image_id =
+        match insert_uploaded_image(pool, input.stamp_card_background_image_bytes).await? {
+            Some(new_image_id) => Some(new_image_id),
+            None => old_background_image_id,
+        };
 
     event_repository::update_settings(
         pool,
@@ -61,10 +62,10 @@ pub async fn update_settings(pool: &MySqlPool, input: SettingsInput) -> Result<(
     )
     .await?;
 
-    if background_image_id != old_background_image_id {
-        if let Some(old_background_image_id) = old_background_image_id {
-            room_image_repository::delete(pool, old_background_image_id).await?;
-        }
+    if background_image_id != old_background_image_id
+        && let Some(old_background_image_id) = old_background_image_id
+    {
+        room_image_repository::delete(pool, old_background_image_id).await?;
     }
 
     Ok(())
@@ -78,13 +79,9 @@ async fn insert_uploaded_image(
         return Ok(None);
     };
     let processed = image_service::process_upload(&bytes).map_err(|_| EventError::Image)?;
-    let image_id = room_image_repository::insert(
-        pool,
-        &Uuid::new_v4().to_string(),
-        &processed,
-        "image/jpeg",
-    )
-    .await?;
+    let image_id =
+        room_image_repository::insert(pool, &Uuid::new_v4().to_string(), &processed, "image/jpeg")
+            .await?;
     Ok(Some(image_id))
 }
 
@@ -163,7 +160,10 @@ mod tests {
         .await
         .unwrap();
 
-        let event = crate::repository::event_repository::find_singleton(&pool).await.unwrap().unwrap();
+        let event = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap();
         let image_id = event.stamp_card_background_image_id.unwrap();
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
             .bind(image_id)
@@ -204,7 +204,10 @@ mod tests {
         .await
         .unwrap();
 
-        let event = crate::repository::event_repository::find_singleton(&pool).await.unwrap().unwrap();
+        let event = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap();
         let new_image_id = event.stamp_card_background_image_id.unwrap();
         let old_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
             .bind(old_image_id)
@@ -222,7 +225,9 @@ mod tests {
     }
 
     #[sqlx::test]
-    async fn update_settings_without_background_image_keeps_existing_background_image(pool: sqlx::MySqlPool) {
+    async fn update_settings_without_background_image_keeps_existing_background_image(
+        pool: sqlx::MySqlPool,
+    ) {
         seed_event(&pool).await;
         super::update_settings(
             &pool,
@@ -251,8 +256,10 @@ mod tests {
         .await
         .unwrap();
 
-        let event = crate::repository::event_repository::find_singleton(&pool).await.unwrap().unwrap();
+        let event = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(event.stamp_card_background_image_id, existing_image_id);
     }
-
 }

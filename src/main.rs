@@ -857,10 +857,11 @@ mod tests {
             "Find a book",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-dashboard-1",)
+            None,
+            None,
+            "qr-dashboard-1",
+        )
         .await
         .unwrap();
         crate::repository::room_repository::insert(
@@ -870,10 +871,11 @@ mod tests {
             "Find a painting",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-dashboard-2",)
+            None,
+            None,
+            "qr-dashboard-2",
+        )
         .await
         .unwrap();
         let app = app_router(pool);
@@ -957,10 +959,11 @@ mod tests {
             "Find a book",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-list-1",)
+            None,
+            None,
+            "qr-list-1",
+        )
         .await
         .unwrap();
         let app = app_router(pool);
@@ -1386,10 +1389,11 @@ mod tests {
             "Quest",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-delete-handler",)
+            None,
+            None,
+            "qr-delete-handler",
+        )
         .await
         .unwrap();
         let app = app_router(pool.clone());
@@ -1458,10 +1462,11 @@ mod tests {
             "Quest",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-handler-value",)
+            None,
+            None,
+            "qr-handler-value",
+        )
         .await
         .unwrap();
         let app = app_router(pool);
@@ -1524,10 +1529,11 @@ mod tests {
             "Old Quest",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-update-handler",)
+            None,
+            None,
+            "qr-update-handler",
+        )
         .await
         .unwrap();
         let app = app_router(pool.clone());
@@ -2278,29 +2284,23 @@ mod tests {
         let session_cookie = extract_cookie(&login_response);
 
         for (boundary, body) in [
-            (
-                "settings-missing-csrf-boundary",
-                {
-                    let boundary = "settings-missing-csrf-boundary";
-                    let mut body = Vec::new();
-                    body.extend(multipart_text_part(boundary, "is_team_mode", "on"));
-                    body.extend(multipart_text_part(boundary, "require_answer_check", "on"));
-                    body.extend(multipart_finish(boundary));
-                    body
-                },
-            ),
-            (
-                "settings-wrong-csrf-boundary",
-                {
-                    let boundary = "settings-wrong-csrf-boundary";
-                    let mut body = Vec::new();
-                    body.extend(multipart_text_part(boundary, "csrf_token", "wrong"));
-                    body.extend(multipart_text_part(boundary, "is_team_mode", "on"));
-                    body.extend(multipart_text_part(boundary, "require_answer_check", "on"));
-                    body.extend(multipart_finish(boundary));
-                    body
-                },
-            ),
+            ("settings-missing-csrf-boundary", {
+                let boundary = "settings-missing-csrf-boundary";
+                let mut body = Vec::new();
+                body.extend(multipart_text_part(boundary, "is_team_mode", "on"));
+                body.extend(multipart_text_part(boundary, "require_answer_check", "on"));
+                body.extend(multipart_finish(boundary));
+                body
+            }),
+            ("settings-wrong-csrf-boundary", {
+                let boundary = "settings-wrong-csrf-boundary";
+                let mut body = Vec::new();
+                body.extend(multipart_text_part(boundary, "csrf_token", "wrong"));
+                body.extend(multipart_text_part(boundary, "is_team_mode", "on"));
+                body.extend(multipart_text_part(boundary, "require_answer_check", "on"));
+                body.extend(multipart_finish(boundary));
+                body
+            }),
         ] {
             let response = app
                 .clone()

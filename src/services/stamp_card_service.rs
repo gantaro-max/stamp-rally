@@ -90,7 +90,7 @@ fn draw_card_title(image: &mut RgbaImage, width: u32) {
     let scale = PxScale::from(30.0);
     let approx_width = CARD_TITLE.chars().count() as i32 * scale.x as i32;
     let x = (width as i32 - approx_width) / 2;
-    draw_bold_text_mut(image, CARD_BORDER_COLOR, x, 16, scale, &*FONT, CARD_TITLE);
+    draw_bold_text_mut(image, CARD_BORDER_COLOR, x, 16, scale, &FONT, CARD_TITLE);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -143,7 +143,7 @@ fn draw_stamp(image: &mut RgbaImage, center_x: i32, center_y: i32, name: &str) {
             buffer_center - approx_width / 2,
             start_y + idx as i32 * line_height,
             scale,
-            &*FONT,
+            &FONT,
             line,
         );
     }

@@ -168,5 +168,4 @@ mod tests {
         assert!(updated.is_team_mode);
         assert!(!updated.require_answer_check);
     }
-
 }

@@ -213,10 +213,11 @@ mod tests {
             "Quest",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-player-room",)
+            None,
+            None,
+            "qr-player-room",
+        )
         .await
         .unwrap()
     }
@@ -377,10 +378,11 @@ mod tests {
             "Quest",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-player-room-2",)
+            None,
+            None,
+            "qr-player-room-2",
+        )
         .await
         .unwrap();
         let player_id = super::insert(

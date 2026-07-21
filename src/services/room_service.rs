@@ -52,7 +52,6 @@ pub async fn current_event(pool: &MySqlPool) -> Result<event_repository::Event, 
         .ok_or(RoomError::NotFound)
 }
 
-
 fn validate_stamp_label(stamp_label: &str) -> Result<(), RoomError> {
     let len = stamp_label.chars().count();
     if len == 0 || len > 4 {
@@ -69,13 +68,9 @@ async fn insert_uploaded_image(
         return Ok(None);
     };
     let processed = image_service::process_upload(&bytes).map_err(|_| RoomError::Image)?;
-    let image_id = room_image_repository::insert(
-        pool,
-        &Uuid::new_v4().to_string(),
-        &processed,
-        "image/jpeg",
-    )
-    .await?;
+    let image_id =
+        room_image_repository::insert(pool, &Uuid::new_v4().to_string(), &processed, "image/jpeg")
+            .await?;
     Ok(Some(image_id))
 }
 
@@ -171,15 +166,15 @@ pub async fn update(pool: &MySqlPool, id: i32, input: UpdateRoomInput) -> Result
     )
     .await?;
 
-    if image_id != old_image_id {
-        if let Some(old_image_id) = old_image_id {
-            room_image_repository::delete(pool, old_image_id).await?;
-        }
+    if image_id != old_image_id
+        && let Some(old_image_id) = old_image_id
+    {
+        room_image_repository::delete(pool, old_image_id).await?;
     }
-    if stamp_image_id != old_stamp_image_id {
-        if let Some(old_stamp_image_id) = old_stamp_image_id {
-            room_image_repository::delete(pool, old_stamp_image_id).await?;
-        }
+    if stamp_image_id != old_stamp_image_id
+        && let Some(old_stamp_image_id) = old_stamp_image_id
+    {
+        room_image_repository::delete(pool, old_stamp_image_id).await?;
     }
 
     Ok(())
@@ -269,10 +264,11 @@ mod tests {
                 "Quest",
                 None,
                 None,
-                None,                None,
                 None,
-
-                &format!("qr-limit-{index}"),)
+                None,
+                None,
+                &format!("qr-limit-{index}"),
+            )
             .await
             .unwrap();
         }
@@ -494,7 +490,12 @@ mod tests {
         let err = super::create(&pool, event_id, input).await.unwrap_err();
 
         assert!(matches!(err, RoomError::StampLabelInvalid));
-        assert_eq!(crate::repository::room_repository::count(&pool, event_id).await.unwrap(), 0);
+        assert_eq!(
+            crate::repository::room_repository::count(&pool, event_id)
+                .await
+                .unwrap(),
+            0
+        );
     }
 
     #[sqlx::test]
@@ -516,7 +517,10 @@ mod tests {
 
         let room_id = super::create(&pool, event_id, input).await.unwrap();
 
-        let room = crate::repository::room_repository::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        let room = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(room.stamp_label.as_deref(), Some("図書"));
     }
 
@@ -528,7 +532,10 @@ mod tests {
 
         let room_id = super::create(&pool, event_id, input).await.unwrap();
 
-        let room = crate::repository::room_repository::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        let room = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap();
         let stamp_image_id = room.stamp_image_id.unwrap();
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
             .bind(stamp_image_id)
@@ -567,7 +574,10 @@ mod tests {
         .await
         .unwrap();
 
-        let room = crate::repository::room_repository::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        let room = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap();
         let new_stamp_image_id = room.stamp_image_id.unwrap();
         let old_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM room_images WHERE id = ?")
             .bind(old_stamp_image_id)
@@ -590,11 +600,12 @@ mod tests {
         let mut input = input("Stamp Image Room".to_string());
         input.stamp_image_bytes = Some(png_bytes());
         let room_id = super::create(&pool, event_id, input).await.unwrap();
-        let existing_stamp_image_id = crate::repository::room_repository::find_by_id(&pool, room_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .stamp_image_id;
+        let existing_stamp_image_id =
+            crate::repository::room_repository::find_by_id(&pool, room_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .stamp_image_id;
 
         super::update(
             &pool,
@@ -612,7 +623,10 @@ mod tests {
         .await
         .unwrap();
 
-        let room = crate::repository::room_repository::find_by_id(&pool, room_id).await.unwrap().unwrap();
+        let room = crate::repository::room_repository::find_by_id(&pool, room_id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(room.stamp_image_id, existing_stamp_image_id);
     }
 
@@ -638,5 +652,4 @@ mod tests {
             .unwrap();
         assert_eq!(image_count, 0);
     }
-
 }

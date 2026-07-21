@@ -58,6 +58,7 @@ pub async fn insert(
     Ok(result.last_insert_id() as i32)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update(
     pool: &MySqlPool,
     id: i32,
@@ -279,10 +280,11 @@ mod tests {
             "Find the red mark",
             Some("red"),
             Some("look up"),
-            None,            None,
             None,
-
-            "qr-uuid-1",)
+            None,
+            None,
+            "qr-uuid-1",
+        )
         .await
         .unwrap();
 
@@ -310,10 +312,11 @@ mod tests {
                 "Quest",
                 None,
                 None,
-                None,                None,
                 None,
-
-                &format!("qr-count-{index}"),)
+                None,
+                None,
+                &format!("qr-count-{index}"),
+            )
             .await
             .unwrap();
         }
@@ -331,10 +334,11 @@ mod tests {
             "Old Quest",
             Some("old"),
             Some("old hint"),
-            None,            None,
             None,
-
-            "qr-update-1",)
+            None,
+            None,
+            "qr-update-1",
+        )
         .await
         .unwrap();
 
@@ -344,10 +348,11 @@ mod tests {
             "New Room",
             "New Quest",
             Some("new"),
-            Some("new hint"),            None,
+            Some("new hint"),
             None,
-
-            None,)
+            None,
+            None,
+        )
         .await
         .unwrap();
 
@@ -369,10 +374,11 @@ mod tests {
             "Quest",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-delete-1",)
+            None,
+            None,
+            "qr-delete-1",
+        )
         .await
         .unwrap();
 
@@ -405,10 +411,11 @@ mod tests {
             "Quest",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-visited-order-1",)
+            None,
+            None,
+            "qr-visited-order-1",
+        )
         .await
         .unwrap();
         let room_b = super::insert(
@@ -418,10 +425,11 @@ mod tests {
             "Quest",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-visited-order-2",)
+            None,
+            None,
+            "qr-visited-order-2",
+        )
         .await
         .unwrap();
         sqlx::query(
@@ -470,10 +478,11 @@ mod tests {
             "Quest",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-random-1",)
+            None,
+            None,
+            "qr-random-1",
+        )
         .await
         .unwrap();
         let unvisited_a = super::insert(
@@ -483,10 +492,11 @@ mod tests {
             "Quest",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-random-2",)
+            None,
+            None,
+            "qr-random-2",
+        )
         .await
         .unwrap();
         let unvisited_b = super::insert(
@@ -496,10 +506,11 @@ mod tests {
             "Quest",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-random-3",)
+            None,
+            None,
+            "qr-random-3",
+        )
         .await
         .unwrap();
         sqlx::query(
@@ -531,10 +542,11 @@ mod tests {
                 "Quest",
                 None,
                 None,
-                None,                None,
                 None,
-
-                &format!("qr-all-visited-{index}"),)
+                None,
+                None,
+                &format!("qr-all-visited-{index}"),
+            )
             .await
             .unwrap();
             sqlx::query(
@@ -661,10 +673,11 @@ mod tests {
             "Scan the code",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-find-by-uuid",)
+            None,
+            None,
+            "qr-find-by-uuid",
+        )
         .await
         .unwrap();
 

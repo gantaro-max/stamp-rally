@@ -128,10 +128,11 @@ mod tests {
             "Quest",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-stamp-handler",)
+            None,
+            None,
+            "qr-stamp-handler",
+        )
         .await
         .unwrap();
         let player_id = crate::repository::player_repository::insert(

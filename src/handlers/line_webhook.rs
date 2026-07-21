@@ -216,10 +216,11 @@ mod tests {
             "Quest A",
             None,
             None,
-            None,            None,
             None,
-
-            "qr-room-a",)
+            None,
+            None,
+            "qr-room-a",
+        )
         .await
         .unwrap();
         let mut state = crate::AppState::new(
