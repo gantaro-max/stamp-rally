@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- 部屋ごとのスタンプ表示名・スタンプ画像、スタンプカード台紙画像の管理画面設定を追加（#27）
+  - 部屋の登録・編集フォームに「スタンプ表示名」（必須・最大4文字。部屋名とは別に、スタンプカード上で読みやすい短い文字列を設定する）と「スタンプ画像」（任意）の入力欄を追加。イベント設定画面（`/admin/settings`）にはスタンプカード全体の台紙用画像（任意）のアップロード欄を追加し、フォームを`multipart/form-data`化した
+  - 新規カラム`rooms.stamp_label`（VARCHAR(4), NULL可）・`rooms.stamp_image_id`・`events.stamp_card_background_image_id`（いずれも既存の`room_images`を参照するFK、`ON DELETE SET NULL`）。画像は既存の部屋画像と同じ検証・保存フロー（`image_service::process_upload`によるマジックバイト検証・リサイズ、新規挿入→参照の張り替え→旧画像削除の順序）を再利用
+  - **今回はDBスキーマと管理画面のみの対応で、実際のスタンプカード画像（`stamp_card_service::render_png`）への反映は未実装**（別途対応予定）。設計は[docs/architecture.md 23節「追記: 部屋ごとのカスタムスタンプ画像・カード台紙画像への対応」](docs/architecture.md#追記-部屋ごとのカスタムスタンプ画像カード台紙画像への対応今後の拡張2段階のprで実装)を参照
+  - あわせて、スタンプカードの部屋名・タイトル文字が小さいサイズでは薄く見える問題を、同じ文字を数pxずらして重ね描きする疑似ボールドとフォントサイズの微増（部屋名20px→22px、タイトル28px→30px）で改善
 - LINE Botの返信に部屋名入りスタンプカード画像を追加（#25）
   - 次のクエスト案内（参加登録直後・QRチェックイン成功後・「開始」再送信時）に、訪問済み部屋の名前がスタンプとして焼き込まれたカード画像を2通目のメッセージとして添付。加えて「スタンプ状況」コマンドでいつでも同じ画像を参照できる
   - `GET /public/stamp-card/{token}`：新規カラム`players.stamp_card_token`（UUID v4、登録時に発行）をキーに訪問済み部屋名を取得し、`stamp_card_service::render_png`でその場にPNG生成する未認証の公開エンドポイント。`/callback`・`/liff/checkin`と同様にDB呼び出しを`game_service::with_db_call_timeout`でラップし、コネクションプール枯渇障害（#22）の再発を防止
