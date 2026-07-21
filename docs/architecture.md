@@ -628,7 +628,8 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
     - 実装方法: 透過背景の正方形バッファ（96×96px、外側リングの外縁半径44pxに数px分の余白を持たせたサイズ。円は自身の中心を軸に回転させても外接円のサイズは変わらないため、この余白はアンチエイリアシングの縁のにじみ対策で十分）に二重リング・文字を描画したのち、`imageproc::geometric_transformations::rotate_about_center`で回転させ、`image::imageops::overlay`でマス中央に合成する
   - `i >= room_names.len()`（未スタンプ）→ 直径84pxの円の輪郭のみ（線幅2px・`--admin-border` `#E2E4E9`）を描画する。文字描画・回転は行わない
 - `total_rooms`が0以下の値で呼ばれることは`game_service`側の呼び出し経路（登録イベントには必ず1部屋以上ある前提、7節）では起こらないが、念のため`total_rooms.max(1)`として扱い、0除算を起こさないようにする
-- 具体的な描画ロジック（フォントの埋め込み方・座標計算）は実装指示書（`instructions/done/stamp-status.md`、フォント埋め込み方針の初出）・`instructions/stamp-card-hanko-design.md`（二重丸スタンプの描画ロジック）側で提示するコード例を参照
+- 文字（部屋名・タイトル）は、フォント自体はBoldウェイトを使っているが、小さいサイズで描画するとアンチエイリアシングにより線が細く薄く見えるという運用フィードバックがあった。`imageproc::drawing::draw_text_mut`には線幅・太さの指定機能が無いため、同じ文字列を数px（上下左右）ずらして複数回重ね描きする「疑似ボールド」で見た目の太さを補う。新規フォントアセットの追加は行わない
+- 具体的な描画ロジック（フォントの埋め込み方・座標計算）は実装指示書（`instructions/done/stamp-status.md`、フォント埋め込み方針の初出）・`instructions/done/stamp-card-hanko-design.md`（二重丸スタンプの描画ロジック）・`instructions/stamp-card-bold-text.md`（文字の太さ改善）側で提示するコード例を参照
 
 ### `GET /public/stamp-card/{token}`
 
