@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 use ab_glyph::{FontRef, PxScale};
 use image::{ImageBuffer, Rgba, RgbaImage};
 use imageproc::drawing::{draw_filled_circle_mut, draw_hollow_rect_mut, draw_text_mut};
-use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
+use imageproc::geometric_transformations::{Interpolation, rotate_about_center};
 use imageproc::rect::Rect;
 
 const FONT_BYTES: &[u8] = include_bytes!("../../assets/fonts/NotoSansJP-Bold.ttf");
