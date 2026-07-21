@@ -32,12 +32,12 @@
 |:--|:--|:--|
 | GET | `/admin/dashboard` | ダッシュボード（設定状況、部屋数、ランキングへのリンク、友だち追加QRコード） |
 | GET | `/admin/settings` | イベント設定画面 |
-| POST | `/admin/settings` | イベント設定更新（個人戦/チーム戦、判定モードの切替） |
+| POST | `/admin/settings` | イベント設定更新（個人戦/チーム戦、判定モードの切替、スタンプカード台紙画像のアップロード） |
 | GET | `/admin/rooms` | 部屋一覧 |
 | GET | `/admin/rooms/add` | 部屋の新規登録画面 |
-| POST | `/admin/rooms/add` | 部屋の新規登録（クエスト文・画像アップロード・判定モードに応じて正解/ヒントを含む） |
+| POST | `/admin/rooms/add` | 部屋の新規登録（クエスト文・画像アップロード・スタンプ表示名（必須）・スタンプ画像アップロード（任意）・判定モードに応じて正解/ヒントを含む） |
 | GET | `/admin/rooms/edit/{id}` | 部屋の編集画面 |
-| POST | `/admin/rooms/update/{id}` | 部屋の更新 |
+| POST | `/admin/rooms/update/{id}` | 部屋の更新（スタンプ表示名・スタンプ画像を含む） |
 | POST | `/admin/rooms/delete/{id}` | 部屋の削除 |
 | GET | `/admin/rooms/{id}/qr` | 部屋のQRコード画像を表示・印刷用に出力（スタッフが現地で保持するため） |
 | GET | `/admin/line-qr` | LINE公式アカウントの友だち追加QRコード画像を表示（`LINE_ADD_FRIEND_URL`未設定時は404。詳細は [architecture.md](architecture.md) 22節） |
@@ -100,7 +100,7 @@
 
 | メソッド | パス | 説明 | 認証 |
 |:--|:--|:--|:--|
-| GET | `/public/image/{uuid}` | 部屋画像のバイナリを返す | 不要 |
+| GET | `/public/image/{uuid}` | 画像のバイナリを返す（部屋のクエスト画像・スタンプ画像・スタンプカード台紙画像を共通で配信） | 不要 |
 | GET | `/public/stamp-card/{token}` | そのプレイヤーのスタンプカード画像（PNG、訪問済み部屋名入り）をその場で生成して返す（詳細は [architecture.md](architecture.md) 23節） | 不要 |
 
 - UUID・`token`は推測不可能なランダム値

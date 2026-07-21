@@ -57,15 +57,15 @@ Handler(Axum) → Service → Repository（sqlx） → DB
 | モジュール | 責務 |
 |:--|:--|
 | `auth_service` | 管理者ログイン、Argon2によるパスワード認証 |
-| `room_service` | 部屋CRUD、画像アップロード、QRコード（UUID）発行・生成 |
-| `event_service` | イベント設定（個人戦/チーム戦、判定モード）の取得・更新 |
+| `room_service` | 部屋CRUD、画像・スタンプ画像アップロード、QRコード（UUID）発行・生成 |
+| `event_service` | イベント設定（個人戦/チーム戦、判定モード、スタンプカード台紙画像）の取得・更新 |
 | `game_service` | ゲーム進行ロジック（参加登録、部屋のランダム割当、正誤判定、QRチェックイン判定、ゴール判定） |
 | `ranking_service` | クリアタイムランキングの取得 |
 | `line_client` | LINE Messaging APIへのメッセージ送信（Flex Message組み立て含む） |
 | `csrf_service` | セッション格納トークンによるCSRFダブルサブミット検証（発行・検証） |
 | `image_service` | アップロード画像のマジックバイト検証・サイズ/寸法上限チェック・JPEG再エンコード |
 | `qr_service` | 部屋UUIDからQRコードPNGを生成 |
-| `stamp_card_service` | 訪問済み部屋名（訪問順）・総部屋数からスタンプカードPNGを生成（23節） |
+| `stamp_card_service` | 訪問済み部屋のスタンプ表示名・カスタム画像（設定されていれば）・総部屋数からスタンプカードPNGを生成（23節） |
 
 ### 認証方式
 
@@ -242,6 +242,8 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 - 画像を伴う登録・更新は `multipart/form-data` で受け取る。画像が添付されていない場合は画像なしで登録できる（`docs/requirements.md`：画像は任意）
 - 部屋の画像を更新する場合、新しい画像を先に `room_images` へ挿入して `rooms.image_id` を張り替えてから、更新前に参照されていた `room_images` 行を削除する（この順序を守ることで、新しい画像の保存に失敗した場合でも古い画像が残り、`rooms.image_id` が無効な行を指す状態を防ぐ）
 - 部屋を削除する場合、`rooms` 行の削除に合わせて、参照していた `room_images` 行も削除する（`visited_rooms` は既存の `ON DELETE CASCADE` で自動的に削除される）
+- **スタンプ表示名（`stamp_label`）**: 登録・編集フォームでは必須項目とし、最大4文字までのバリデーションを行う（サーバー側で文字数チェック、超過時はエラーを返す）。既存の部屋データ（この機能追加より前に登録済みの行）は`stamp_label`が`NULL`のままの場合があるため、`stamp_card_service`側で`room_name`から切り詰めたフォールバック文字列を使う（DB側にNOT NULL制約は付けず、既存行への一括バックフィルは行わない。過去の`stamp_card_token`バックフィル漏れの教訓、23節を踏まえた対応）
+- **スタンプ画像（`stamp_image_id`）**: 部屋画像（`image_id`）と同じ`room_images`テーブル・同じ検証（`image_service`、6節「画像アップロードの検証」）・同じ張り替え/削除の順序を使う。任意項目で、未設定でも登録・更新できる
 - 部屋一覧・登録・編集・削除・QR表示はすべて `/admin/*` 配下（`require_admin` 済み）。フォームは既存の `csrf_service`（セッション格納トークンとのダブルサブミット）を再利用する
 - 管理画面のAskamaテンプレートは `templates/admin/_base.html` を共通レイアウト（Bootstrap 5のナビゲーション等）として `{% extends %}` で利用する。今後追加する設定画面・ランキング画面もこのレイアウトに乗せる（`templates/auth/login.html` はログイン前の独立画面のため対象外のまま）
 
@@ -408,7 +410,8 @@ MysteryBotの `team_groups` に相当する概念は今回1レコードのみの
 
 ## 16. イベント設定画面（`/admin/settings`、Slice C）
 
-- 個人戦/チーム戦（`events.is_team_mode`）・判定モード（`events.require_answer_check`）の2項目のみを切り替える。`event_name`の編集は`docs/requirements.md`の要件に含まれないため、本画面のスコープ外とする
+- 個人戦/チーム戦（`events.is_team_mode`）・判定モード（`events.require_answer_check`）・スタンプカード台紙画像（`events.stamp_card_background_image_id`、23節）を切り替える。`event_name`の編集は`docs/requirements.md`の要件に含まれないため、本画面のスコープ外とする
+- スタンプカード台紙画像は任意項目（アップロードしなければ既定のクリーム色の台紙のまま）。フォームへの追加により`multipart/form-data`での送信に変わる。画像の検証・保存・張り替え/削除の順序は7節の部屋画像・スタンプ画像と同じ方針（`image_service`での検証、新規挿入→参照の張り替え→旧行削除の順序）を`event_service`側でも踏襲する
 - `events`はシングルトン運用のため、`event_service::current(pool)`で唯一の行を取得し、`event_service::update_settings(pool, input)`で更新する（`room_service::current_event`と同種のラッパー。なお`room_service`/`handlers::rooms.rs`側も`room-management-fixes-2`で`event_repository::find_singleton`の直接呼び出しを`room_service::current_event`経由に統一済み）
 - HTMLの`<input type="checkbox">`はチェックが外れているとフィールド自体がフォームデータに含まれない。Axumの`Form`抽出でこれを扱うため、対応するリクエスト構造体のbool項目には`#[serde(default)]`を付与し、「送信されていない＝false」として扱う。また、チェックが入っている場合HTMLは値`"on"`を送信するが、`serde_urlencoded`のbool型デシリアライザは`"true"`/`"false"`しか受け付けないため、`#[serde(default)]`だけでは不十分（送信時に422になる）。`"on"`/`"true"`を`true`として扱うカスタム`deserialize_with`関数を併用すること（`settings-checkbox-fix`で対応）
 - 設定変更は既存データを一切書き換えない（例: `require_answer_check`を`false`に切り替えても、既存の`rooms.answer`/`hint_msg`はそのままDBに残る。`game_service`は常にイベントの現在の`require_answer_check`を見て使うかどうかを判断するため、未使用の値が残っていても実害はない。切替のたびに既存部屋のデータを消去・追従させるような処理は行わない）
@@ -630,6 +633,19 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
 - `total_rooms`が0以下の値で呼ばれることは`game_service`側の呼び出し経路（登録イベントには必ず1部屋以上ある前提、7節）では起こらないが、念のため`total_rooms.max(1)`として扱い、0除算を起こさないようにする
 - 文字（部屋名・タイトル）は、フォント自体はBoldウェイトを使っているが、小さいサイズで描画するとアンチエイリアシングにより線が細く薄く見えるという運用フィードバックがあった。`imageproc::drawing::draw_text_mut`には線幅・太さの指定機能が無いため、同じ文字列を数px（上下左右）ずらして複数回重ね描きする「疑似ボールド」で見た目の太さを補う。新規フォントアセットの追加は行わない
 - 具体的な描画ロジック（フォントの埋め込み方・座標計算）は実装指示書（`instructions/done/stamp-status.md`、フォント埋め込み方針の初出）・`instructions/done/stamp-card-hanko-design.md`（二重丸スタンプの描画ロジック）・`instructions/stamp-card-bold-text.md`（文字の太さ改善）側で提示するコード例を参照
+
+### 追記: 部屋ごとのカスタムスタンプ画像・カード台紙画像への対応（今後の拡張、2段階のPRで実装）
+
+管理者から「スタンプ・スタンプカード自体を画像でカスタマイズしたい」という要望があり、以下の2点を追加する。1回のPRでまとめず、下記のPR A（DB・管理画面）→ PR B（`render_png`への反映）の順で段階的に実装する。
+
+- **部屋ごとのスタンプ画像**（`rooms.stamp_image_id`、`docs/database.md`参照）: 設定されていれば、その部屋のマスははんこ風の自動生成ではなく、この画像を直径84pxの円形にクロップして表示する
+- **スタンプカード台紙画像**（`events.stamp_card_background_image_id`）: 設定されていれば、キャンバス全体の背景としてリサイズ・クロップして敷き、その上に（従来通り）二重線の飾り枠・タイトルを重ねて描画する
+
+**PR A（本ドキュメント更新時点のスコープ）**: DBスキーマ（`rooms.stamp_label`・`rooms.stamp_image_id`・`events.stamp_card_background_image_id`）と、管理画面（部屋登録・編集フォームへのスタンプ表示名（必須・4文字まで）入力欄とスタンプ画像アップロード欄の追加、イベント設定画面へのカード台紙画像アップロード欄の追加）のみを対象とする。この時点では`stamp_card_service::render_png`は変更せず、既存の（`room_name`から切り詰める）はんこ風自動生成のまま据え置く。指示書は`instructions/stamp-card-custom-images-db.md`
+
+**PR B（今後、PR A完了後に着手）**: `stamp_card_service::render_png`を拡張し、部屋ごとの「スタンプ表示名（`stamp_label`、無ければ`room_name`から切り詰めたフォールバック）」と「カスタムスタンプ画像（あれば）」、カード全体の「台紙画像（あれば）」を受け取れるようにする。カスタムスタンプ画像がある部屋は円形にクロップして合成するのみとし、はんこ回転演出は適用しない（画像素材によっては回転が不自然になるため）。呼び出し元（`GET /public/stamp-card/{token}`ハンドラー）は訪問済みの各部屋の`stamp_label`・`stamp_image_id`と、イベントの`stamp_card_background_image_id`を取得し、`stamp_image_id`/`stamp_card_background_image_id`が設定されていれば対応する`room_images.data`をデコードして渡す
+
+**PR Bでの性能面の注意点**: 部屋のスタンプ画像・カード台紙画像は管理者がごく稀にしか変更しない静的データだが、「スタンプ状況」は参加者から高頻度に呼ばれる未認証エンドポイントである。呼び出しのたびに最大15件超のLONGBLOB行をDBから取得・デコードするのは、本番で実際に発生したDBコネクション遅延の障害（21節、TiDB Serverlessとのレイテンシ）を踏まえると避けたい。そのため、デコード済み画像（`image::DynamicImage`）を`room_images.id`をキーにプロセス内メモリでキャッシュする（`AppState`に`Arc<RwLock<HashMap<i32, Arc<DynamicImage>>>>`を追加し、初回アクセス時にDBから取得・デコードしてキャッシュ、以降はキャッシュヒットで完結させる）。画像を張り替えると新しい`id`になる設計（7節の「新規挿入→参照の張り替え→旧行削除」の順序）のため、古いキャッシュエントリは自然に使われなくなり、明示的な無効化処理は不要。エントリ数は「部屋数15＋カード背景1」程度で頭打ちのため、メモリ使用量も気にする必要はない
 
 ### `GET /public/stamp-card/{token}`
 

@@ -13,7 +13,7 @@ DB: MySQL 8.0（ローカル） / TiDB Serverless（本番）
 | `rooms` | 部屋（チェックポイント）情報 |
 | `players` | 参加者（LINEユーザー×イベント） |
 | `visited_rooms` | 訪問済み部屋の記録 |
-| `room_images` | 部屋の画像バイナリ（UUIDで公開URL生成） |
+| `room_images` | 画像バイナリの汎用ストレージ（UUIDで公開URL生成）。部屋のクエスト画像・スタンプ画像・スタンプカード台紙画像で共有 |
 | `pending_registrations` | LINE Botの参加登録の一時状態（「開始」〜名前入力までの間）。Koyeb無料枠のスケールtoゼロに耐えるためDB永続化する（[architecture.md 9節](architecture.md#9-会話状態管理参加登録の一時状態)） |
 
 ---
@@ -27,6 +27,9 @@ DB: MySQL 8.0（ローカル） / TiDB Serverless（本番）
 | `admin_pass_hash` | VARCHAR | Argon2ハッシュ化パスワード |
 | `is_team_mode` | BOOLEAN | チーム戦フラグ（false = 個人戦） |
 | `require_answer_check` | BOOLEAN | 判定モード（true = QR＋正解入力必須、false = QR読み取りのみ） |
+| `stamp_card_background_image_id` | INT(FK, NULL可) | スタンプカード画像全体の台紙用カスタム画像（`room_images` 参照、`ON DELETE SET NULL`）。未設定時は既定のクリーム色の台紙デザイン（[architecture.md 23節](architecture.md#23-スタンプ状況スタンプカード画像)） |
+
+インデックス: `stamp_card_background_image_id`（`idx_events_stamp_card_background_image_id`）
 
 ---
 
@@ -42,11 +45,13 @@ DB: MySQL 8.0（ローカル） / TiDB Serverless（本番）
 | `hint_msg` | VARCHAR(255, NULL可) | ヒントメッセージ。`require_answer_check = true` のイベントでのみ使用 |
 | `image_id` | INT(FK, NULL可) | 画像ID（`room_images` 参照、`ON DELETE SET NULL`） |
 | `qr_uuid` | VARCHAR(36) | QRコードに埋め込む一意なUUID |
+| `stamp_label` | VARCHAR(4, NULL可) | スタンプカード上でその部屋のスタンプに表示する短い文字列。管理画面の部屋登録・編集フォームでは必須項目として入力させるが、カラム自体はNULL許容にする（この機能追加より前に登録された既存の部屋データを壊さないため）。NULLの場合、スタンプ生成時は`room_name`から機械的に切り詰めた文字列にフォールバックする |
+| `stamp_image_id` | INT(FK, NULL可) | その部屋専用のスタンプ画像（`room_images` 参照、`ON DELETE SET NULL`）。未設定時は`stamp_label`を使ったはんこ風の自動生成スタンプになる |
 
 最大登録数: 15部屋（イベントあたり）
 
 ユニーク制約: `qr_uuid`（`uq_rooms_qr_uuid`）
-インデックス: `event_id`（`idx_rooms_event_id`）、`image_id`（`idx_rooms_image_id`）
+インデックス: `event_id`（`idx_rooms_event_id`）、`image_id`（`idx_rooms_image_id`）、`stamp_image_id`（`idx_rooms_stamp_image_id`）
 
 ---
 
@@ -85,6 +90,8 @@ DB: MySQL 8.0（ローカル） / TiDB Serverless（本番）
 ---
 
 ## room_images（画像ストレージ）
+
+汎用の画像バイナリストレージ。部屋のクエスト画像（`rooms.image_id`）だけでなく、部屋のスタンプ画像（`rooms.stamp_image_id`）・スタンプカード台紙画像（`events.stamp_card_background_image_id`）も同じテーブルを共有する（テーブル名は歴史的経緯で`room_images`のままだが、用途を部屋の画像に限定しない）。
 
 | カラム | 型 | 説明 |
 |:--|:--|:--|
