@@ -64,8 +64,10 @@ pub fn render_png(
         None => ImageBuffer::from_pixel(width, height, CARD_BACKGROUND),
     };
 
-    draw_card_frame(&mut image, width, height);
-    draw_card_title(&mut image, width);
+    if card_background.is_none() {
+        draw_card_frame(&mut image, width, height);
+        draw_card_title(&mut image, width);
+    }
 
     for i in 0..total_rooms {
         let col = i % COLUMNS;
@@ -418,6 +420,29 @@ mod tests {
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
         assert_eq!(*image.get_pixel(40, 40), CUSTOM_BACKGROUND_COLOR);
+    }
+
+    #[test]
+    fn custom_card_background_keeps_frame_pixels_from_background_image() {
+        let background = solid_image(CUSTOM_BACKGROUND_COLOR, 520, 600);
+        let png = super::render_png(&[], 15, Some(&background));
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+
+        assert_eq!(*image.get_pixel(260, 10), CUSTOM_BACKGROUND_COLOR);
+        assert_eq!(*image.get_pixel(260, 16), CUSTOM_BACKGROUND_COLOR);
+    }
+
+    #[test]
+    fn custom_card_background_keeps_title_area_pixels_from_background_image() {
+        let background = solid_image(CUSTOM_BACKGROUND_COLOR, 520, 600);
+        let png = super::render_png(&[], 15, Some(&background));
+        let image = image::load_from_memory(&png).unwrap().to_rgba8();
+
+        for y in 16..52 {
+            for x in 150..370 {
+                assert_eq!(*image.get_pixel(x, y), CUSTOM_BACKGROUND_COLOR);
+            }
+        }
     }
 
     #[test]
