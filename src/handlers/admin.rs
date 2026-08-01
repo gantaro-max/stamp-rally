@@ -8,6 +8,8 @@ use sqlx::MySqlPool;
 use tower_sessions::Session;
 
 use crate::AppState;
+use crate::handlers::image::public_image_url;
+use crate::repository::room_image_repository;
 use crate::services::{csrf_service, event_service, qr_service, ranking_service, room_service};
 
 #[derive(Template)]
@@ -62,6 +64,7 @@ struct SettingsTemplate {
     csrf_token: String,
     is_team_mode: bool,
     require_answer_check: bool,
+    stamp_card_background_image_url: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -81,16 +84,34 @@ pub async fn settings_form(session: Session, State(pool): State<MySqlPool>) -> R
         Ok(event) => event,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
+    let stamp_card_background_image_url =
+        match public_image_url_for_id(&pool, event.stamp_card_background_image_id).await {
+            Ok(url) => url,
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
     let template = SettingsTemplate {
         csrf_token,
         is_team_mode: event.is_team_mode,
         require_answer_check: event.require_answer_check,
+        stamp_card_background_image_url,
     };
 
     match template.render() {
         Ok(body) => Html(body).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+async fn public_image_url_for_id(
+    pool: &MySqlPool,
+    image_id: Option<i32>,
+) -> Result<Option<String>, sqlx::Error> {
+    let Some(image_id) = image_id else {
+        return Ok(None);
+    };
+    Ok(room_image_repository::find_uuid_by_id(pool, image_id)
+        .await?
+        .map(|uuid| public_image_url(&uuid)))
 }
 
 pub async fn update_settings(
@@ -170,5 +191,142 @@ pub async fn ranking(session: Session, State(pool): State<MySqlPool>) -> Respons
     match template.render() {
         Ok(body) => Html(body).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use askama::Template;
+    use axum::{
+        Router,
+        body::{Body, to_bytes},
+        http::{Request, StatusCode, header},
+        middleware as axum_middleware,
+        routing::get,
+    };
+    use time::Duration;
+    use tower::ServiceExt;
+    use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer};
+
+    use super::SettingsTemplate;
+
+    async fn seed_authenticated_session(session: Session) -> &'static str {
+        session.insert("admin_authenticated", true).await.unwrap();
+        "ok"
+    }
+
+    async fn authenticated_cookie(app: Router) -> String {
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/test/session")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .next_back()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn settings_template_previews_configured_stamp_card_background() {
+        let template = SettingsTemplate {
+            csrf_token: "logout-csrf".to_string(),
+            is_team_mode: false,
+            require_answer_check: false,
+            stamp_card_background_image_url: Some("/public/image/background-uuid".to_string()),
+        };
+
+        let body = template.render().unwrap();
+
+        assert!(body.contains(r#"<img src="/public/image/background-uuid"#));
+    }
+
+    #[test]
+    fn settings_template_shows_unset_when_stamp_card_background_is_missing() {
+        let template = SettingsTemplate {
+            csrf_token: "logout-csrf".to_string(),
+            is_team_mode: false,
+            require_answer_check: false,
+            stamp_card_background_image_url: None,
+        };
+
+        let body = template.render().unwrap();
+
+        assert!(body.contains("未設定"));
+    }
+
+    #[sqlx::test]
+    async fn settings_form_previews_existing_stamp_card_background(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let image_id = crate::repository::room_image_repository::insert(
+            &pool,
+            "background-preview-uuid",
+            b"background-image",
+            "image/png",
+        )
+        .await
+        .unwrap();
+        crate::repository::event_repository::update_settings(
+            &pool,
+            event_id,
+            false,
+            false,
+            Some(image_id),
+        )
+        .await
+        .unwrap();
+
+        let session_layer = SessionManagerLayer::new(MemoryStore::default())
+            .with_expiry(Expiry::OnInactivity(Duration::hours(12)));
+        let app = Router::new()
+            .route("/test/session", get(seed_authenticated_session))
+            .route(
+                "/admin/settings",
+                get(super::settings_form).route_layer(axum_middleware::from_fn(
+                    crate::middleware::require_admin::require_admin,
+                )),
+            )
+            .with_state(pool)
+            .layer(session_layer);
+        let cookie = authenticated_cookie(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/settings")
+                    .header(header::COOKIE, cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains(r#"/public/image/background-preview-uuid"#));
     }
 }

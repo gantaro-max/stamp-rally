@@ -16,7 +16,15 @@
     <input class="form-check-input" type="checkbox" id="require_answer_check" name="require_answer_check" {% if require_answer_check %}checked{% endif %}>
     <label class="form-check-label" for="require_answer_check">QR＋正解入力を必須にする</label>
   </div>
-  <div class="mb-3"><label class="form-label">スタンプカード台紙画像（任意）</label><input class="form-control" type="file" name="stamp_card_background_image" accept="image/png,image/jpeg"></div>
+  <div class="mb-3">
+    <label class="form-label">スタンプカード台紙画像（任意）</label>
+    {% if let Some(url) = stamp_card_background_image_url %}
+      <div class="mb-2"><img src="{{ url }}" alt="現在のスタンプカード台紙画像" style="max-width: 160px; max-height: 160px;"></div>
+    {% else %}
+      <div class="mb-2 text-muted">未設定</div>
+    {% endif %}
+    <input class="form-control" type="file" name="stamp_card_background_image" accept="image/png,image/jpeg">
+  </div>
   <button class="btn btn-primary" type="submit">保存</button>
 </form>
 {% endblock %}
