@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Added
+- 台紙画像を設定した場合にアプリ側の飾り枠・タイトル文字を描画しないよう変更（#29）
+  - `stamp_card_service::render_png`で、`card_background`が`Some`のときは`draw_card_frame`・`draw_card_title`の呼び出しをスキップするよう条件分岐を追加（`None`のときの挙動・スタンプ描画ロジックは無変更）
+  - #28でカード全体の台紙画像を敷けるようになったが、常にアプリ描画の二重枠・タイトル文字「スタンプカード」が上から重なってしまい、タイトル・枠込みで完成させた独自デザインの台紙が意図通りに見えないという運用側からのフィードバックを受けた対応。台紙画像側に独自の枠・タイトル・装飾を含めることで、オリジナルデザインのカードにできるようになった（各部屋のスタンプが置かれる位置自体は固定グリッドのままで、管理画面から個別に配置を変更することはできない）
+  - 設計は[docs/architecture.md 23節「追記: 台紙カスタマイズ時のアプリ描画枠・タイトルの抑制（PR C）」](docs/architecture.md#追記-台紙カスタマイズ時のアプリ描画枠タイトルの抑制pr-c)を参照
 - 部屋ごとのカスタムスタンプ画像・スタンプカード台紙画像を、実際のスタンプカード画像（`stamp_card_service::render_png`）に反映（#28）
   - `render_png`のシグネチャを`StampCell { label, custom_image }`の配列＋`card_background: Option<&DynamicImage>`を受け取る形に変更。部屋に`stamp_image_id`が設定されていればその画像を直径84pxの円形にクロップして表示（回転演出は適用しない）、未設定ならこれまで通りラベルを使ったはんこ風自動生成。`stamp_card_background_image_id`が設定されていればカード全体の背景として敷く
   - `room_repository::find_visited_room_names_ordered`が`stamp_label`・`stamp_image_id`も返すよう拡張（訪問順は変更なし）。`room_image_repository::find_by_id`（内部ID指定での画像取得）を新設

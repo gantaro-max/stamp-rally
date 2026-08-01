@@ -590,7 +590,7 @@ Koyebの Environment Variables（Secrets）に以下を設定する。値はKoye
 
 - **部屋ごとのスタンプ画像**（`rooms.stamp_image_id`）: 設定されていれば、その部屋のマスははんこ風の自動生成ではなく、この画像を直径84pxの円形にクロップして表示する（回転演出は適用しない。画像素材によっては回転が不自然になるため）
 - **スタンプ表示名のフォールバック**: 各部屋のラベルは呼び出し元（ハンドラー）が`stamp_label.unwrap_or(room_name)`で解決してから`render_png`に渡す。`render_png`側のテキスト処理（`truncate_room_name`・`split_stamp_label_lines`・回転）は変更しない。`stamp_label`は4文字までしか登録できないため`truncate_room_name`（6文字まで）を素通りするだけで済み、`room_name`にフォールバックした場合のみ従来通り切り詰められる
-- **スタンプカード台紙画像**（`events.stamp_card_background_image_id`）: 設定されていれば、キャンバス全体の背景としてリサイズ・クロップして敷き、その上に（従来通り）二重線の飾り枠・タイトルを重ねて描画する
+- **スタンプカード台紙画像**（`events.stamp_card_background_image_id`）: 設定されていれば、キャンバス全体の背景としてリサイズ・クロップして敷く。台紙未設定時のみ、その上に二重線の飾り枠・タイトルを重ねて描画する（台紙設定時に枠・タイトルを重ねない挙動はPR C、下記「追記」参照）
 
 #### `stamp_card_service::render_png`のシグネチャ変更
 
@@ -609,7 +609,7 @@ pub fn render_png(
 
 `stamps`は訪問済み部屋の配列（訪問順、従来の`room_names: &[String]`に相当）。各要素の`custom_image`が`Some`ならその部屋のマスは円形クロップした画像を合成し、`None`なら従来通り`label`を使ったはんこ風自動生成（二重リング・回転）を描画する。`card_background`が`Some`ならキャンバス全体の背景に使う（`DynamicImage::resize_to_fill`でアスペクト比を保ったまま画面いっぱいにクロップ）。`None`なら従来通りクリーム色の`CARD_BACKGROUND`のまま。
 
-#### 追記: 台紙カスタマイズ時のアプリ描画枠・タイトルの抑制（今後の拡張）
+#### 追記: 台紙カスタマイズ時のアプリ描画枠・タイトルの抑制（PR C）
 
 台紙画像（`card_background`）を管理者が設定した場合、アプリが従来描画していた二重線の飾り枠（`draw_card_frame`）とタイトル文字「スタンプカード」（`draw_card_title`）は描画しない（`card_background.is_some()`のときはこの2つの呼び出しをスキップする）。台紙画像に管理者自身のタイトル・枠・装飾を含めることで、オリジナルデザインのカードを作れるようにするため。`card_background`が`None`（既定のクリーム色台紙）のときは、従来通り両方とも描画する（回帰なし）。
 
