@@ -64,8 +64,10 @@ pub fn render_png(
         None => ImageBuffer::from_pixel(width, height, CARD_BACKGROUND),
     };
 
-    draw_card_frame(&mut image, width, height);
-    draw_card_title(&mut image, width);
+    if card_background.is_none() {
+        draw_card_frame(&mut image, width, height);
+        draw_card_title(&mut image, width);
+    }
 
     for i in 0..total_rooms {
         let col = i % COLUMNS;
