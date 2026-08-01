@@ -282,7 +282,7 @@ mod tests {
 
         assert_eq!(image::guess_format(&png).unwrap(), ImageFormat::Png);
         let image = image::load_from_memory(&png).unwrap();
-        assert_eq!(image.dimensions(), (520, 600));
+        assert_eq!(image.dimensions(), (520, 567));
     }
 
     #[test]
@@ -290,7 +290,7 @@ mod tests {
         let png = super::render_png(&[stamp("図書室")], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 88), STAMP_COLOR);
+        assert_eq!(*image.get_pixel(120, 103), STAMP_COLOR);
     }
 
     #[test]
@@ -298,7 +298,7 @@ mod tests {
         let png = super::render_png(&[stamp("図書室")], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 96), STAMP_COLOR);
+        assert_eq!(*image.get_pixel(120, 111), STAMP_COLOR);
     }
 
     #[test]
@@ -306,7 +306,7 @@ mod tests {
         let png = super::render_png(&[stamp("図書室")], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 93), CARD_BACKGROUND);
+        assert_eq!(*image.get_pixel(120, 108), CARD_BACKGROUND);
     }
 
     #[test]
@@ -314,7 +314,7 @@ mod tests {
         let png = super::render_png(&[], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 88), EMPTY_BORDER);
+        assert_eq!(*image.get_pixel(120, 103), EMPTY_BORDER);
     }
 
     #[test]
@@ -322,7 +322,7 @@ mod tests {
         let png = super::render_png(&[], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 130), CARD_BACKGROUND);
+        assert_eq!(*image.get_pixel(120, 145), CARD_BACKGROUND);
     }
 
     #[test]
@@ -330,8 +330,8 @@ mod tests {
         let png = super::render_png(&[stamp("A"), stamp("B"), stamp("C")], 5, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(420, 88), STAMP_COLOR);
-        assert_eq!(*image.get_pixel(100, 188), EMPTY_BORDER);
+        assert_eq!(*image.get_pixel(400, 103), STAMP_COLOR);
+        assert_eq!(*image.get_pixel(120, 192), EMPTY_BORDER);
     }
 
     #[test]
@@ -340,7 +340,7 @@ mod tests {
 
         assert_eq!(image::guess_format(&png).unwrap(), ImageFormat::Png);
         let image = image::load_from_memory(&png).unwrap();
-        assert_eq!(image.dimensions(), (520, 200));
+        assert_eq!(image.dimensions(), (520, 211));
     }
 
     #[test]
@@ -402,7 +402,7 @@ mod tests {
         );
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 130), CUSTOM_STAMP_COLOR);
+        assert_eq!(*image.get_pixel(120, 145), CUSTOM_STAMP_COLOR);
     }
 
     #[test]
@@ -410,7 +410,7 @@ mod tests {
         let png = super::render_png(&[stamp("図書室")], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 88), STAMP_COLOR);
+        assert_eq!(*image.get_pixel(120, 103), STAMP_COLOR);
     }
 
     #[test]
