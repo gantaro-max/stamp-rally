@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Added
+- スタンプカードのスタンプ配置グリッドの位置を微調整（#31）
+  - `stamp_card_service`のグリッド定数を変更（`CELL_WIDTH: 160→140`、`CELL_HEIGHT: 100→89`、`TITLE_AREA_HEIGHT: 60→80`）。横方向・縦方向で共用していた`PADDING`定数を`PADDING_X`（50）・`PADDING_Y`（21）に分割した
+  - 実際に台紙画像（独自デザインの背景）をアップロードして確認したところ、スタンプ位置を台紙デザインに合わせて微調整したいという要望を受けた対応。キャンバス横幅は部屋数に依らず変更前後で520pxのまま維持し、1行目をやや下に、行・列の間隔をやや狭めた（5部屋の場合、1部屋目の中心は(100,130)→(120,145)等）
+  - 設計は[docs/architecture.md 23節「追記: スタンプ配置グリッドの微調整（PR E）」](docs/architecture.md#追記-スタンプ配置グリッドの微調整pr-e)を参照
 - 全部屋クリア時のLINE返信に、クリアFlex Messageに加えてスタンプカード画像（全マス埋まった状態）も送信するよう変更（#30）
   - `ReplyMessage::Cleared`に`stamp_card_url: String`を追加。`game_service::cleared_reply`が既存の`stamp_card_url()`ヘルパーでURLを組み立て、`line_client::to_line_messages`が`ReplyMessage::Quest`と同様に`[クリアFlex Message, スタンプカード画像メッセージ]`の2通を返すようにした
   - クエスト案内時（#25）は既にFlex Message＋スタンプカード画像の2通構成だったが、ゴール時だけクリア専用Flex Message単体（文言のみ）だったため、実際にプレイして確認したところ「全部屋制覇した」達成感が視覚的に伝わりにくいという課題があった。クリア判定時点で全部屋訪問済みのため、返る画像は自動的に全マス埋まった状態になる（`stamp_card_service`側の変更は不要）

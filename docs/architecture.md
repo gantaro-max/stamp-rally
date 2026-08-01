@@ -655,7 +655,7 @@ pub fn render_png(
 - `to_line_messages`の`ReplyMessage::Cleared`のケースを`[クリアFlex Message, スタンプカード画像メッセージ]`（`Quest`と同じ2通構成）に変更する。クリアタイム時点で全部屋訪問済みのため、返る画像は自動的に全マス埋まった状態になる
 - `build_cleared_flex_message`自体（文言・レイアウト）は変更しない
 
-#### 追記: スタンプ配置グリッドの微調整（今後の拡張）
+#### 追記: スタンプ配置グリッドの微調整（PR E）
 
 実際に台紙画像（管理者が独自デザインした背景）をアップロードして確認したところ、スタンプの配置位置を台紙のデザインに合わせて微調整したいという要望があった。キャンバス全体のサイズ（`COLUMNS * CELL_WIDTH + PADDING * 2`の横幅、`TITLE_AREA_HEIGHT + rows * CELL_HEIGHT + PADDING * 2`の縦幅）は変えず、グリッド内部の間隔・位置のみを調整する。
 
