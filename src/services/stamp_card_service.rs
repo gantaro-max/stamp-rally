@@ -13,12 +13,13 @@ static FONT: LazyLock<FontRef<'static>> =
     LazyLock::new(|| FontRef::try_from_slice(FONT_BYTES).expect("bundled font must be valid"));
 
 const COLUMNS: i32 = 3;
-const CELL_WIDTH: i32 = 160;
-const CELL_HEIGHT: i32 = 100;
-const PADDING: i32 = 20;
+const CELL_WIDTH: i32 = 140;
+const CELL_HEIGHT: i32 = 89;
+const PADDING_X: i32 = 50;
+const PADDING_Y: i32 = 21;
 const MAX_NAME_CHARS: usize = 6;
 
-const TITLE_AREA_HEIGHT: i32 = 60;
+const TITLE_AREA_HEIGHT: i32 = 80;
 const BORDER_MARGIN: i32 = 10;
 const BORDER_GAP: i32 = 6;
 const CARD_TITLE: &str = "スタンプカード";
@@ -54,8 +55,8 @@ pub fn render_png(
 ) -> Vec<u8> {
     let total_rooms = total_rooms.max(1) as i32;
     let rows = (total_rooms + COLUMNS - 1) / COLUMNS;
-    let width = (COLUMNS * CELL_WIDTH + PADDING * 2) as u32;
-    let height = (TITLE_AREA_HEIGHT + rows * CELL_HEIGHT + PADDING * 2) as u32;
+    let width = (COLUMNS * CELL_WIDTH + PADDING_X * 2) as u32;
+    let height = (TITLE_AREA_HEIGHT + rows * CELL_HEIGHT + PADDING_Y * 2) as u32;
 
     let mut image: RgbaImage = match card_background {
         Some(background) => background
@@ -72,8 +73,8 @@ pub fn render_png(
     for i in 0..total_rooms {
         let col = i % COLUMNS;
         let row = i / COLUMNS;
-        let center_x = PADDING + col * CELL_WIDTH + CELL_WIDTH / 2;
-        let center_y = TITLE_AREA_HEIGHT + PADDING + row * CELL_HEIGHT + CELL_HEIGHT / 2;
+        let center_x = PADDING_X + col * CELL_WIDTH + CELL_WIDTH / 2;
+        let center_y = TITLE_AREA_HEIGHT + PADDING_Y + row * CELL_HEIGHT + CELL_HEIGHT / 2;
 
         match stamps.get(i as usize) {
             Some(StampCell {
@@ -282,7 +283,7 @@ mod tests {
 
         assert_eq!(image::guess_format(&png).unwrap(), ImageFormat::Png);
         let image = image::load_from_memory(&png).unwrap();
-        assert_eq!(image.dimensions(), (520, 600));
+        assert_eq!(image.dimensions(), (520, 567));
     }
 
     #[test]
@@ -290,7 +291,7 @@ mod tests {
         let png = super::render_png(&[stamp("図書室")], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 88), STAMP_COLOR);
+        assert_eq!(*image.get_pixel(120, 103), STAMP_COLOR);
     }
 
     #[test]
@@ -298,7 +299,7 @@ mod tests {
         let png = super::render_png(&[stamp("図書室")], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 96), STAMP_COLOR);
+        assert_eq!(*image.get_pixel(120, 111), STAMP_COLOR);
     }
 
     #[test]
@@ -306,7 +307,7 @@ mod tests {
         let png = super::render_png(&[stamp("図書室")], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 93), CARD_BACKGROUND);
+        assert_eq!(*image.get_pixel(120, 108), CARD_BACKGROUND);
     }
 
     #[test]
@@ -314,7 +315,7 @@ mod tests {
         let png = super::render_png(&[], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 88), EMPTY_BORDER);
+        assert_eq!(*image.get_pixel(120, 103), EMPTY_BORDER);
     }
 
     #[test]
@@ -322,7 +323,7 @@ mod tests {
         let png = super::render_png(&[], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 130), CARD_BACKGROUND);
+        assert_eq!(*image.get_pixel(120, 145), CARD_BACKGROUND);
     }
 
     #[test]
@@ -330,8 +331,8 @@ mod tests {
         let png = super::render_png(&[stamp("A"), stamp("B"), stamp("C")], 5, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(420, 88), STAMP_COLOR);
-        assert_eq!(*image.get_pixel(100, 188), EMPTY_BORDER);
+        assert_eq!(*image.get_pixel(400, 103), STAMP_COLOR);
+        assert_eq!(*image.get_pixel(120, 192), EMPTY_BORDER);
     }
 
     #[test]
@@ -340,7 +341,7 @@ mod tests {
 
         assert_eq!(image::guess_format(&png).unwrap(), ImageFormat::Png);
         let image = image::load_from_memory(&png).unwrap();
-        assert_eq!(image.dimensions(), (520, 200));
+        assert_eq!(image.dimensions(), (520, 211));
     }
 
     #[test]
@@ -402,7 +403,7 @@ mod tests {
         );
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 130), CUSTOM_STAMP_COLOR);
+        assert_eq!(*image.get_pixel(120, 145), CUSTOM_STAMP_COLOR);
     }
 
     #[test]
@@ -410,7 +411,7 @@ mod tests {
         let png = super::render_png(&[stamp("図書室")], 15, None);
         let image = image::load_from_memory(&png).unwrap().to_rgba8();
 
-        assert_eq!(*image.get_pixel(100, 88), STAMP_COLOR);
+        assert_eq!(*image.get_pixel(120, 103), STAMP_COLOR);
     }
 
     #[test]
