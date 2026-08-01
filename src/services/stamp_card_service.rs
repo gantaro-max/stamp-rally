@@ -13,12 +13,13 @@ static FONT: LazyLock<FontRef<'static>> =
     LazyLock::new(|| FontRef::try_from_slice(FONT_BYTES).expect("bundled font must be valid"));
 
 const COLUMNS: i32 = 3;
-const CELL_WIDTH: i32 = 160;
-const CELL_HEIGHT: i32 = 100;
-const PADDING: i32 = 20;
+const CELL_WIDTH: i32 = 140;
+const CELL_HEIGHT: i32 = 89;
+const PADDING_X: i32 = 50;
+const PADDING_Y: i32 = 21;
 const MAX_NAME_CHARS: usize = 6;
 
-const TITLE_AREA_HEIGHT: i32 = 60;
+const TITLE_AREA_HEIGHT: i32 = 80;
 const BORDER_MARGIN: i32 = 10;
 const BORDER_GAP: i32 = 6;
 const CARD_TITLE: &str = "スタンプカード";
@@ -54,8 +55,8 @@ pub fn render_png(
 ) -> Vec<u8> {
     let total_rooms = total_rooms.max(1) as i32;
     let rows = (total_rooms + COLUMNS - 1) / COLUMNS;
-    let width = (COLUMNS * CELL_WIDTH + PADDING * 2) as u32;
-    let height = (TITLE_AREA_HEIGHT + rows * CELL_HEIGHT + PADDING * 2) as u32;
+    let width = (COLUMNS * CELL_WIDTH + PADDING_X * 2) as u32;
+    let height = (TITLE_AREA_HEIGHT + rows * CELL_HEIGHT + PADDING_Y * 2) as u32;
 
     let mut image: RgbaImage = match card_background {
         Some(background) => background
@@ -72,8 +73,8 @@ pub fn render_png(
     for i in 0..total_rooms {
         let col = i % COLUMNS;
         let row = i / COLUMNS;
-        let center_x = PADDING + col * CELL_WIDTH + CELL_WIDTH / 2;
-        let center_y = TITLE_AREA_HEIGHT + PADDING + row * CELL_HEIGHT + CELL_HEIGHT / 2;
+        let center_x = PADDING_X + col * CELL_WIDTH + CELL_WIDTH / 2;
+        let center_y = TITLE_AREA_HEIGHT + PADDING_Y + row * CELL_HEIGHT + CELL_HEIGHT / 2;
 
         match stamps.get(i as usize) {
             Some(StampCell {
