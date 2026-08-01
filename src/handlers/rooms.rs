@@ -449,8 +449,202 @@ pub async fn qr(State(pool): State<MySqlPool>, AxumPath(id): AxumPath<i32>) -> R
 #[cfg(test)]
 mod tests {
     use askama::Template;
+    use axum::{
+        Router,
+        body::{Body, to_bytes},
+        http::{Request, StatusCode, header},
+        middleware as axum_middleware,
+        routing::get,
+    };
+    use time::Duration;
+    use tower::ServiceExt;
+    use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer};
 
-    use super::RoomAddTemplate;
+    use super::{RoomAddTemplate, RoomEditTemplate, RoomListItem, RoomListTemplate};
+
+    async fn seed_authenticated_session(session: Session) -> &'static str {
+        session.insert("admin_authenticated", true).await.unwrap();
+        "ok"
+    }
+
+    async fn authenticated_cookie(app: Router) -> String {
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/test/session")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        response
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .next_back()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn room_list_template_previews_configured_images() {
+        let template = RoomListTemplate {
+            rooms: vec![RoomListItem {
+                id: 1,
+                room_name: "Library".to_string(),
+                image_url: Some("/public/image/quest-uuid".to_string()),
+                stamp_image_url: Some("/public/image/stamp-uuid".to_string()),
+            }],
+            csrf_token: "logout-csrf".to_string(),
+        };
+
+        let body = template.render().unwrap();
+
+        assert!(body.contains(r#"<img src="/public/image/quest-uuid"#));
+        assert!(body.contains(r#"<img src="/public/image/stamp-uuid"#));
+    }
+
+    #[test]
+    fn room_list_template_shows_unset_when_images_are_missing() {
+        let template = RoomListTemplate {
+            rooms: vec![RoomListItem {
+                id: 1,
+                room_name: "Library".to_string(),
+                image_url: None,
+                stamp_image_url: None,
+            }],
+            csrf_token: "logout-csrf".to_string(),
+        };
+
+        let body = template.render().unwrap();
+
+        assert!(body.matches("未設定").count() >= 2);
+    }
+
+    #[test]
+    fn room_edit_template_previews_configured_images() {
+        let template = RoomEditTemplate {
+            room_id: 1,
+            csrf_token: "logout-csrf".to_string(),
+            require_answer_check: false,
+            room_name: "Library".to_string(),
+            quest_text: "Find a book".to_string(),
+            answer: String::new(),
+            hint_msg: String::new(),
+            stamp_label: "図書".to_string(),
+            image_url: Some("/public/image/quest-uuid".to_string()),
+            stamp_image_url: Some("/public/image/stamp-uuid".to_string()),
+            error_message: None,
+        };
+
+        let body = template.render().unwrap();
+
+        assert!(body.contains(r#"<img src="/public/image/quest-uuid"#));
+        assert!(body.contains(r#"<img src="/public/image/stamp-uuid"#));
+    }
+
+    #[test]
+    fn room_edit_template_shows_unset_when_images_are_missing() {
+        let template = RoomEditTemplate {
+            room_id: 1,
+            csrf_token: "logout-csrf".to_string(),
+            require_answer_check: false,
+            room_name: "Library".to_string(),
+            quest_text: "Find a book".to_string(),
+            answer: String::new(),
+            hint_msg: String::new(),
+            stamp_label: "図書".to_string(),
+            image_url: None,
+            stamp_image_url: None,
+            error_message: None,
+        };
+
+        let body = template.render().unwrap();
+
+        assert!(body.matches("未設定").count() >= 2);
+    }
+
+    #[sqlx::test]
+    async fn edit_form_previews_existing_room_images(pool: sqlx::MySqlPool) {
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let event_id = crate::repository::event_repository::find_singleton(&pool)
+            .await
+            .unwrap()
+            .unwrap()
+            .id;
+        let quest_image_id = crate::repository::room_image_repository::insert(
+            &pool,
+            "quest-preview-uuid",
+            b"quest-image",
+            "image/png",
+        )
+        .await
+        .unwrap();
+        let stamp_image_id = crate::repository::room_image_repository::insert(
+            &pool,
+            "stamp-preview-uuid",
+            b"stamp-image",
+            "image/png",
+        )
+        .await
+        .unwrap();
+        let room_id = crate::repository::room_repository::insert(
+            &pool,
+            event_id,
+            "Library",
+            "Find a book",
+            None,
+            None,
+            Some(quest_image_id),
+            Some("図書"),
+            Some(stamp_image_id),
+            "qr-edit-preview",
+        )
+        .await
+        .unwrap();
+
+        let session_layer = SessionManagerLayer::new(MemoryStore::default())
+            .with_expiry(Expiry::OnInactivity(Duration::hours(12)));
+        let app = Router::new()
+            .route("/test/session", get(seed_authenticated_session))
+            .route(
+                "/admin/rooms/edit/{id}",
+                get(super::edit_form).route_layer(axum_middleware::from_fn(
+                    crate::middleware::require_admin::require_admin,
+                )),
+            )
+            .with_state(pool)
+            .layer(session_layer);
+        let cookie = authenticated_cookie(app.clone()).await;
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/admin/rooms/edit/{room_id}"))
+                    .header(header::COOKIE, cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains(r#"/public/image/quest-preview-uuid"#));
+        assert!(body.contains(r#"/public/image/stamp-preview-uuid"#));
+    }
 
     #[test]
     fn room_templates_include_logout_csrf_token() {

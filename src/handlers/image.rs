@@ -162,6 +162,12 @@ mod tests {
         output.into_inner()
     }
 
+
+    #[test]
+    fn public_image_url_builds_relative_public_image_path() {
+        assert_eq!(super::public_image_url("abc-123"), "/public/image/abc-123");
+    }
+
     #[sqlx::test]
     async fn public_image_returns_stored_image(pool: sqlx::MySqlPool) {
         let data = b"jpeg-bytes";
