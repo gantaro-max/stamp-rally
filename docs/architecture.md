@@ -696,3 +696,33 @@ pub fn render_png(
 - 部屋名がマスの幅に収まりきらない場合の高度な処理（自動縮小・折り返し等）は行わない。文字数ベースの単純な切り詰めのみとする
 
 ---
+
+## 24. 管理画面での現在アップロード済み画像のプレビュー表示（今後の拡張）
+
+### 背景・目的
+
+部屋登録・編集画面（7節）とイベント設定画面（16節）の画像アップロード欄（クエスト画像・スタンプ画像・スタンプカード台紙画像）は、いずれもファイル選択の`<input type="file">`のみで、**現在何がアップロードされているか（そもそも設定済みかどうか、設定済みならどんな画像か）が画面上で分からない**という課題があった。管理者が実際に運用する中で、この見えにくさが改善要望として挙がった。
+
+### 変更内容
+
+- `/admin/rooms`（部屋一覧）: 各行に「クエスト画像」「スタンプ画像」の列を追加し、設定済みなら小さいサムネイル（`<img>`、`/public/image/{uuid}`を参照）、未設定なら「未設定」の文字を表示する
+- `/admin/rooms/edit/{id}`（部屋編集）: 「画像」「スタンプ画像」の各ファイル入力欄の上に、現在の画像のサムネイルプレビュー（設定済みの場合）または「未設定」の文字を表示する。ファイルを選択しなければ既存の画像はそのまま維持されるという既存仕様（7節）自体は変更しない
+- `/admin/rooms/add`（部屋新規登録）: 新規登録時点では画像が存在しないため変更なし
+- `/admin/settings`（イベント設定）: 「スタンプカード台紙画像」欄の上に、現在の台紙画像のサムネイルプレビュー（設定済みの場合）または「未設定」の文字を表示する
+
+いずれも`/public/image/{uuid}`（6節、既存の公開画像配信エンドポイント）をそのまま利用する。新しいエンドポイントの追加は不要。
+
+### 実装方針
+
+- `room_repository::Room`は既に`image_id: Option<i32>`・`stamp_image_id: Option<i32>`を持つ。`room_image_repository::find_uuid_by_id`（既存、23節で導入）でUUIDを引き、`/public/image/{uuid}`という相対パスをテンプレートに渡す（`quest_reply_for_room`が絶対URLを組み立てる際と同じ考え方だが、管理画面は常に同一オリジンから閲覧するため`public_base_url`は使わず相対パスでよい）
+- `RoomListTemplate`は`rooms: Vec<Room>`を直接テンプレートに渡しているが、Askamaテンプレート内でDBアクセス相当の処理はできないため、ハンドラー側で画像URLを解決した表示用の構造体（例: `RoomListItem { room_id, room_name, image_url: Option<String>, stamp_image_url: Option<String> }`。既存テンプレートが参照している`room.id`・`room.room_name`もあわせて保持する）に変換してから渡す
+- `RoomEditTemplateValues`・`SettingsTemplate`に`image_url: Option<String>`・`stamp_image_url: Option<String>`・`stamp_card_background_image_url: Option<String>`をそれぞれ追加する
+- `rooms::update`のバリデーションエラー時の再描画（`render_edit_form`呼び出し）でも、画像はエラー時点でまだ張り替わっていないため、エラー分岐に入る前に`room_service::get`で取得した現在の`room`から`image_id`・`stamp_image_id`を解決し、同じ`image_url`・`stamp_image_url`を再描画に渡す
+- `admin::update_settings`はバリデーションエラー時にフォームを再描画しない（成功時リダイレクト・失敗時500のみ）ため、プレビュー用の追加対応は`settings_form`（GET）のみでよい
+
+### 対象外
+
+- 画像の削除専用ボタン（現在アップロード済みの画像を、新しい画像を選ばずに未設定へ戻す機能）は今回のスコープ外。既存の「新しい画像をアップロードすると張り替わる」という仕様のみ
+- サムネイルのクリックでの拡大表示・モーダル表示は行わない。原寸表示が必要な場合は画像URLを直接開けば確認できる
+
+---
