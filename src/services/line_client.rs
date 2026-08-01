@@ -188,7 +188,13 @@ pub fn to_line_messages(reply: &ReplyMessage, liff_id: &str) -> Vec<Value> {
         ReplyMessage::StampStatus { image_url } => {
             vec![build_stamp_status_image_message(image_url)]
         }
-        ReplyMessage::Cleared { elapsed } => vec![build_cleared_flex_message(elapsed)],
+        ReplyMessage::Cleared {
+            elapsed,
+            stamp_card_url,
+        } => vec![
+            build_cleared_flex_message(elapsed),
+            build_stamp_status_image_message(stamp_card_url),
+        ],
     }
 }
 
