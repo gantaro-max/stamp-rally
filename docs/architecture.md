@@ -646,7 +646,7 @@ pub fn render_png(
 - `line_client::build_stamp_status_image_message(url: &str) -> Value`を追加し、LINEの画像メッセージ（`{"type": "image", "originalContentUrl": ..., "previewImageUrl": ...}`。両方とも同じURLでよい）を組み立てる
 - `to_line_messages`（13節で`to_line_message`から改名）は、`ReplyMessage::Quest`のとき`[クエストFlex Message, スタンプカード画像メッセージ]`、`ReplyMessage::StampStatus`のとき`[スタンプカード画像メッセージ]`を返す
 
-#### 追記: クリア時にもスタンプカード画像を送信する（今後の拡張）
+#### 追記: クリア時にもスタンプカード画像を送信する（PR D）
 
 当初は`CheckinOutcome::Cleared`（全部屋クリア時）のメッセージにスタンプカードを追加しない設計だった（クリア専用のFlex Messageが既に「全部屋制覇」を文言で表現しており、画像を重ねて送る必要は無いと判断していたため）。しかし実際にプレイして確認したところ、クエスト案内時（Flex Message＋スタンプカード画像の2通）と異なり、ゴール時だけFlex Message単体（文言のみ）だと、全スタンプが揃った状態を視覚的に見せる演出が欠け、「集めきった」達成感が伝わりにくいことが分かった。クエスト案内時と同様、クリア時にも全スタンプが揃ったスタンプカード画像を添える。
 
