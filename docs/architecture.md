@@ -646,9 +646,17 @@ pub fn render_png(
 - `line_client::build_stamp_status_image_message(url: &str) -> Value`を追加し、LINEの画像メッセージ（`{"type": "image", "originalContentUrl": ..., "previewImageUrl": ...}`。両方とも同じURLでよい）を組み立てる
 - `to_line_messages`（13節で`to_line_message`から改名）は、`ReplyMessage::Quest`のとき`[クエストFlex Message, スタンプカード画像メッセージ]`、`ReplyMessage::StampStatus`のとき`[スタンプカード画像メッセージ]`を返す
 
+#### 追記: クリア時にもスタンプカード画像を送信する（今後の拡張）
+
+当初は`CheckinOutcome::Cleared`（全部屋クリア時）のメッセージにスタンプカードを追加しない設計だった（クリア専用のFlex Messageが既に「全部屋制覇」を文言で表現しており、画像を重ねて送る必要は無いと判断していたため）。しかし実際にプレイして確認したところ、クエスト案内時（Flex Message＋スタンプカード画像の2通）と異なり、ゴール時だけFlex Message単体（文言のみ）だと、全スタンプが揃った状態を視覚的に見せる演出が欠け、「集めきった」達成感が伝わりにくいことが分かった。クエスト案内時と同様、クリア時にも全スタンプが揃ったスタンプカード画像を添える。
+
+- `ReplyMessage::Cleared`に`stamp_card_url: String`を追加する（`ReplyMessage::Quest`と同じ形）
+- `game_service::cleared_reply`に`public_base_url: &str`引数を追加し、既存の`stamp_card_url()`ヘルパー（本節）で`player.stamp_card_token`からURLを組み立てて`stamp_card_url`にセットする。呼び出し元の`checkin`関数内2箇所（クリア判定の分岐）で`public_base_url`を渡すよう変更する
+- `to_line_messages`の`ReplyMessage::Cleared`のケースを`[クリアFlex Message, スタンプカード画像メッセージ]`（`Quest`と同じ2通構成）に変更する。クリアタイム時点で全部屋訪問済みのため、返る画像は自動的に全マス埋まった状態になる
+- `build_cleared_flex_message`自体（文言・レイアウト）は変更しない
+
 ### 対象外
 
-- `CheckinOutcome::Cleared`（全部屋クリア時）のメッセージにはスタンプカードを追加しない。クリア専用のFlex Message（13節）が既に「全部屋制覇」を表現しており、スタンプカードを重ねて送る要件は無い
 - 台紙画像設定時にアプリ描画の飾り枠・タイトルを抑制する（上記追記）以外に、カードの見た目（色・フォント）を管理者が設定できるようにする機能は今回のスコープ外
 - 部屋ごとのスタンプ配置座標（3列固定グリッド）を管理画面から個別に変更できるようにする機能はスコープ外。台紙側のデザインを固定グリッドの座標に合わせ込む運用とする
 - 部屋名がマスの幅に収まりきらない場合の高度な処理（自動縮小・折り返し等）は行わない。文字数ベースの単純な切り詰めのみとする
