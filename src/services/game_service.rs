@@ -1257,10 +1257,21 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        let super::CheckinOutcome::Cleared(ReplyMessage::Cleared { elapsed }) = outcome else {
+        let super::CheckinOutcome::Cleared(ReplyMessage::Cleared {
+            elapsed,
+            stamp_card_url,
+        }) = outcome
+        else {
             panic!("expected cleared outcome");
         };
         assert!(is_elapsed_display(&elapsed));
+        assert_eq!(
+            stamp_card_url,
+            format!(
+                "{PUBLIC_BASE_URL}/public/stamp-card/{}",
+                player.stamp_card_token
+            )
+        );
         assert_eq!(
             crate::repository::player_repository::count_visited(&pool, player_id)
                 .await
