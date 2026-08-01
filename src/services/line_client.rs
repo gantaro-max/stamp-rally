@@ -188,7 +188,13 @@ pub fn to_line_messages(reply: &ReplyMessage, liff_id: &str) -> Vec<Value> {
         ReplyMessage::StampStatus { image_url } => {
             vec![build_stamp_status_image_message(image_url)]
         }
-        ReplyMessage::Cleared { elapsed } => vec![build_cleared_flex_message(elapsed)],
+        ReplyMessage::Cleared {
+            elapsed,
+            stamp_card_url,
+        } => vec![
+            build_cleared_flex_message(elapsed),
+            build_stamp_status_image_message(stamp_card_url),
+        ],
     }
 }
 
@@ -532,11 +538,17 @@ mod tests {
     fn to_line_messages_builds_cleared_flex_message() {
         let reply = crate::services::game_service::ReplyMessage::Cleared {
             elapsed: "1:23".to_string(),
+            stamp_card_url: "https://example.test/public/stamp-card/token".to_string(),
         };
 
         assert_eq!(
             super::to_line_messages(&reply, "ignored-liff-id"),
-            vec![super::build_cleared_flex_message("1:23")]
+            vec![
+                super::build_cleared_flex_message("1:23"),
+                super::build_stamp_status_image_message(
+                    "https://example.test/public/stamp-card/token"
+                )
+            ]
         );
     }
 }

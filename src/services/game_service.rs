@@ -23,6 +23,7 @@ pub enum ReplyMessage {
     },
     Cleared {
         elapsed: String,
+        stamp_card_url: String,
     },
 }
 
@@ -300,13 +301,19 @@ pub async fn checkin(
     let room_count = room_repository::count(pool, event.id).await?;
     if visited_count >= room_count {
         player_repository::mark_finished(pool, player.id).await?;
-        return Ok(CheckinOutcome::Cleared(cleared_reply(&player)));
+        return Ok(CheckinOutcome::Cleared(cleared_reply(
+            public_base_url,
+            &player,
+        )));
     }
 
     let Some(next_room) = room_repository::find_random_unvisited(pool, event.id, player.id).await?
     else {
         player_repository::mark_finished(pool, player.id).await?;
-        return Ok(CheckinOutcome::Cleared(cleared_reply(&player)));
+        return Ok(CheckinOutcome::Cleared(cleared_reply(
+            public_base_url,
+            &player,
+        )));
     };
     player_repository::update_current_room(pool, player.id, next_room.id).await?;
     let intro = format!(
@@ -324,11 +331,14 @@ pub async fn checkin(
     Ok(CheckinOutcome::NextQuest(reply))
 }
 
-fn cleared_reply(player: &player_repository::Player) -> ReplyMessage {
+fn cleared_reply(public_base_url: &str, player: &player_repository::Player) -> ReplyMessage {
     let elapsed = crate::services::ranking_service::format_elapsed(
         chrono::Utc::now().naive_utc() - player.started_at,
     );
-    ReplyMessage::Cleared { elapsed }
+    ReplyMessage::Cleared {
+        elapsed,
+        stamp_card_url: stamp_card_url(public_base_url, &player.stamp_card_token),
+    }
 }
 
 fn stamp_card_url(public_base_url: &str, token: &str) -> String {
@@ -540,7 +550,7 @@ mod tests {
             ReplyMessage::Text(value) => value,
             ReplyMessage::Quest { .. } => panic!("expected text reply"),
             ReplyMessage::StampStatus { image_url } => panic!("expected text reply: {image_url}"),
-            ReplyMessage::Cleared { elapsed } => panic!("expected text reply: {elapsed}"),
+            ReplyMessage::Cleared { elapsed, .. } => panic!("expected text reply: {elapsed}"),
         }
     }
 
@@ -555,7 +565,7 @@ mod tests {
             } => (intro, room_name, quest_text, image_url),
             ReplyMessage::Text(value) => panic!("expected quest reply: {value}"),
             ReplyMessage::StampStatus { image_url } => panic!("expected quest reply: {image_url}"),
-            ReplyMessage::Cleared { elapsed } => panic!("expected quest reply: {elapsed}"),
+            ReplyMessage::Cleared { elapsed, .. } => panic!("expected quest reply: {elapsed}"),
         }
     }
 
@@ -566,7 +576,9 @@ mod tests {
             ReplyMessage::Quest { room_name, .. } => {
                 panic!("expected stamp status reply: {room_name}")
             }
-            ReplyMessage::Cleared { elapsed } => panic!("expected stamp status reply: {elapsed}"),
+            ReplyMessage::Cleared { elapsed, .. } => {
+                panic!("expected stamp status reply: {elapsed}")
+            }
         }
     }
 
@@ -1257,10 +1269,21 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        let super::CheckinOutcome::Cleared(ReplyMessage::Cleared { elapsed }) = outcome else {
+        let super::CheckinOutcome::Cleared(ReplyMessage::Cleared {
+            elapsed,
+            stamp_card_url,
+        }) = outcome
+        else {
             panic!("expected cleared outcome");
         };
         assert!(is_elapsed_display(&elapsed));
+        assert_eq!(
+            stamp_card_url,
+            format!(
+                "{PUBLIC_BASE_URL}/public/stamp-card/{}",
+                player.stamp_card_token
+            )
+        );
         assert_eq!(
             crate::repository::player_repository::count_visited(&pool, player_id)
                 .await
