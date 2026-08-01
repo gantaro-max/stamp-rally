@@ -697,7 +697,7 @@ pub fn render_png(
 
 ---
 
-## 24. 管理画面での現在アップロード済み画像のプレビュー表示（今後の拡張）
+## 24. 管理画面での現在アップロード済み画像のプレビュー表示（PR F）
 
 ### 背景・目的
 
@@ -715,7 +715,7 @@ pub fn render_png(
 ### 実装方針
 
 - `room_repository::Room`は既に`image_id: Option<i32>`・`stamp_image_id: Option<i32>`を持つ。`room_image_repository::find_uuid_by_id`（既存、23節で導入）でUUIDを引き、`/public/image/{uuid}`という相対パスをテンプレートに渡す（`quest_reply_for_room`が絶対URLを組み立てる際と同じ考え方だが、管理画面は常に同一オリジンから閲覧するため`public_base_url`は使わず相対パスでよい）
-- `RoomListTemplate`は`rooms: Vec<Room>`を直接テンプレートに渡しているが、Askamaテンプレート内でDBアクセス相当の処理はできないため、ハンドラー側で画像URLを解決した表示用の構造体（例: `RoomListItem { room_id, room_name, image_url: Option<String>, stamp_image_url: Option<String> }`。既存テンプレートが参照している`room.id`・`room.room_name`もあわせて保持する）に変換してから渡す
+- `RoomListTemplate`は`rooms: Vec<Room>`を直接テンプレートに渡しているが、Askamaテンプレート内でDBアクセス相当の処理はできないため、ハンドラー側で画像URLを解決した表示用の構造体（`RoomListItem { id, room_name, image_url: Option<String>, stamp_image_url: Option<String> }`。既存テンプレートが参照している`room.id`・`room.room_name`もあわせて保持する）に変換してから渡す
 - `RoomEditTemplateValues`・`SettingsTemplate`に`image_url: Option<String>`・`stamp_image_url: Option<String>`・`stamp_card_background_image_url: Option<String>`をそれぞれ追加する
 - `rooms::update`のバリデーションエラー時の再描画（`render_edit_form`呼び出し）でも、画像はエラー時点でまだ張り替わっていないため、エラー分岐に入る前に`room_service::get`で取得した現在の`room`から`image_id`・`stamp_image_id`を解決し、同じ`image_url`・`stamp_image_url`を再描画に渡す
 - `admin::update_settings`はバリデーションエラー時にフォームを再描画しない（成功時リダイレクト・失敗時500のみ）ため、プレビュー用の追加対応は`settings_form`（GET）のみでよい
