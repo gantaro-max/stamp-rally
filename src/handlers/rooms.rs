@@ -8,14 +8,22 @@ use sqlx::MySqlPool;
 use tower_sessions::Session;
 
 use crate::{
-    repository::room_repository::Room,
+    handlers::image::public_image_url,
+    repository::{room_image_repository, room_repository::Room},
     services::{csrf_service, qr_service, room_service},
 };
+
+struct RoomListItem {
+    id: i32,
+    room_name: String,
+    image_url: Option<String>,
+    stamp_image_url: Option<String>,
+}
 
 #[derive(Template)]
 #[template(path = "admin/rooms/list.html")]
 struct RoomListTemplate {
-    rooms: Vec<Room>,
+    rooms: Vec<RoomListItem>,
     csrf_token: String,
 }
 
@@ -32,12 +40,44 @@ pub async fn list(State(pool): State<MySqlPool>, session: Session) -> Response {
         Ok(rooms) => rooms,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
+    let rooms = match room_list_items(&pool, rooms).await {
+        Ok(rooms) => rooms,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
     let template = RoomListTemplate { rooms, csrf_token };
 
     match template.render() {
         Ok(body) => Html(body).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+async fn room_list_items(
+    pool: &MySqlPool,
+    rooms: Vec<Room>,
+) -> Result<Vec<RoomListItem>, sqlx::Error> {
+    let mut items = Vec::with_capacity(rooms.len());
+    for room in rooms {
+        items.push(RoomListItem {
+            id: room.id,
+            room_name: room.room_name,
+            image_url: public_image_url_for_id(pool, room.image_id).await?,
+            stamp_image_url: public_image_url_for_id(pool, room.stamp_image_id).await?,
+        });
+    }
+    Ok(items)
+}
+
+async fn public_image_url_for_id(
+    pool: &MySqlPool,
+    image_id: Option<i32>,
+) -> Result<Option<String>, sqlx::Error> {
+    let Some(image_id) = image_id else {
+        return Ok(None);
+    };
+    Ok(room_image_repository::find_uuid_by_id(pool, image_id)
+        .await?
+        .map(|uuid| public_image_url(&uuid)))
 }
 
 #[derive(Template)]
@@ -270,6 +310,8 @@ struct RoomEditTemplate {
     answer: String,
     hint_msg: String,
     stamp_label: String,
+    image_url: Option<String>,
+    stamp_image_url: Option<String>,
     error_message: Option<&'static str>,
 }
 
@@ -289,6 +331,15 @@ pub async fn edit_form(
         return StatusCode::NOT_FOUND.into_response();
     };
 
+    let image_url = match public_image_url_for_id(&pool, room.image_id).await {
+        Ok(image_url) => image_url,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let stamp_image_url = match public_image_url_for_id(&pool, room.stamp_image_id).await {
+        Ok(stamp_image_url) => stamp_image_url,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+
     render_edit_form(
         session,
         event.require_answer_check,
@@ -300,6 +351,8 @@ pub async fn edit_form(
             answer: room.answer.unwrap_or_default(),
             hint_msg: room.hint_msg.unwrap_or_default(),
             stamp_label: room.stamp_label.unwrap_or_default(),
+            image_url,
+            stamp_image_url,
         },
     )
     .await
@@ -312,6 +365,8 @@ struct RoomEditTemplateValues {
     answer: String,
     hint_msg: String,
     stamp_label: String,
+    image_url: Option<String>,
+    stamp_image_url: Option<String>,
 }
 
 async fn render_edit_form(
@@ -333,6 +388,8 @@ async fn render_edit_form(
         answer: values.answer,
         hint_msg: values.hint_msg,
         stamp_label: values.stamp_label,
+        image_url: values.image_url,
+        stamp_image_url: values.stamp_image_url,
         error_message,
     };
 
@@ -366,6 +423,20 @@ pub async fn update(
         return StatusCode::FORBIDDEN.into_response();
     }
 
+    let Some(existing_room) = (match room_service::get(&pool, id).await {
+        Ok(room) => room,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let image_url = match public_image_url_for_id(&pool, existing_room.image_id).await {
+        Ok(image_url) => image_url,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let stamp_image_url = match public_image_url_for_id(&pool, existing_room.stamp_image_id).await {
+        Ok(stamp_image_url) => stamp_image_url,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
     let values = RoomEditTemplateValues {
         room_id: id,
         room_name: form.room_name.clone(),
@@ -373,6 +444,8 @@ pub async fn update(
         answer: form.answer.clone().unwrap_or_default(),
         hint_msg: form.hint_msg.clone().unwrap_or_default(),
         stamp_label: form.stamp_label.clone(),
+        image_url,
+        stamp_image_url,
     };
     let input = room_service::UpdateRoomInput {
         room_name: form.room_name,

@@ -8,6 +8,8 @@ use sqlx::MySqlPool;
 use tower_sessions::Session;
 
 use crate::AppState;
+use crate::handlers::image::public_image_url;
+use crate::repository::room_image_repository;
 use crate::services::{csrf_service, event_service, qr_service, ranking_service, room_service};
 
 #[derive(Template)]
@@ -62,6 +64,7 @@ struct SettingsTemplate {
     csrf_token: String,
     is_team_mode: bool,
     require_answer_check: bool,
+    stamp_card_background_image_url: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -81,16 +84,34 @@ pub async fn settings_form(session: Session, State(pool): State<MySqlPool>) -> R
         Ok(event) => event,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
+    let stamp_card_background_image_url =
+        match public_image_url_for_id(&pool, event.stamp_card_background_image_id).await {
+            Ok(url) => url,
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
     let template = SettingsTemplate {
         csrf_token,
         is_team_mode: event.is_team_mode,
         require_answer_check: event.require_answer_check,
+        stamp_card_background_image_url,
     };
 
     match template.render() {
         Ok(body) => Html(body).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
+}
+
+async fn public_image_url_for_id(
+    pool: &MySqlPool,
+    image_id: Option<i32>,
+) -> Result<Option<String>, sqlx::Error> {
+    let Some(image_id) = image_id else {
+        return Ok(None);
+    };
+    Ok(room_image_repository::find_uuid_by_id(pool, image_id)
+        .await?
+        .map(|uuid| public_image_url(&uuid)))
 }
 
 pub async fn update_settings(
@@ -172,7 +193,6 @@ pub async fn ranking(session: Session, State(pool): State<MySqlPool>) -> Respons
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
-
 
 #[cfg(test)]
 mod tests {

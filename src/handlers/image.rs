@@ -9,6 +9,10 @@ use sqlx::MySqlPool;
 
 use crate::{AppState, StampImageCache, repository::room_image_repository};
 
+pub fn public_image_url(uuid: &str) -> String {
+    format!("/public/image/{uuid}")
+}
+
 pub async fn serve(State(pool): State<MySqlPool>, Path(uuid): Path<String>) -> impl IntoResponse {
     match room_image_repository::find_by_uuid(&pool, &uuid).await {
         Ok(Some((data, mime_type))) => ([(header::CONTENT_TYPE, mime_type)], data).into_response(),
@@ -161,7 +165,6 @@ mod tests {
             .unwrap();
         output.into_inner()
     }
-
 
     #[test]
     fn public_image_url_builds_relative_public_image_path() {

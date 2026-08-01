@@ -9,11 +9,25 @@
   <a class="btn btn-primary" href="/admin/rooms/add">新規登録</a>
 </div>
 <table class="table align-middle">
-  <thead><tr><th>部屋名</th><th>QR</th><th>操作</th></tr></thead>
+  <thead><tr><th>部屋名</th><th>クエスト画像</th><th>スタンプ画像</th><th>QR</th><th>操作</th></tr></thead>
   <tbody>
   {% for room in rooms %}
     <tr>
       <td>{{ room.room_name }}</td>
+      <td>
+        {% if let Some(url) = room.image_url %}
+          <img src="{{ url }}" alt="クエスト画像" width="48" height="48" style="object-fit: cover;">
+        {% else %}
+          <span class="text-muted">未設定</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if let Some(url) = room.stamp_image_url %}
+          <img src="{{ url }}" alt="スタンプ画像" width="48" height="48" style="object-fit: cover;">
+        {% else %}
+          <span class="text-muted">未設定</span>
+        {% endif %}
+      </td>
       <td><a href="/admin/rooms/{{ room.id }}/qr"><img src="/admin/rooms/{{ room.id }}/qr" alt="QRコード" width="60" height="60"></a></td>
       <td>
         <a class="btn btn-sm btn-outline-primary" href="/admin/rooms/edit/{{ room.id }}">編集</a>
