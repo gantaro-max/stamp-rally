@@ -2,13 +2,32 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 
-pub const MAX_FAILURES: u32 = 5;
+pub const MAX_ATTEMPTS: u32 = 5;
 pub const BLOCK_DURATION_MINUTES: i64 = 15;
 pub const CLEANUP_THRESHOLD: usize = 1024;
 
 pub struct AttemptRecord {
     pub failures: u32,
     pub last_failure: DateTime<Utc>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum AttemptResult {
+    Accepted,
+    Blocked(chrono::Duration),
+}
+
+pub fn register_attempt(
+    records: &mut HashMap<String, AttemptRecord>,
+    key: &str,
+    now: DateTime<Utc>,
+) -> AttemptResult {
+    if let Some(remaining) = blocked_for(records, key, now) {
+        return AttemptResult::Blocked(remaining);
+    }
+
+    record_failure(records, key, now);
+    AttemptResult::Accepted
 }
 
 pub fn record_failure(records: &mut HashMap<String, AttemptRecord>, key: &str, now: DateTime<Utc>) {
@@ -27,7 +46,20 @@ pub fn record_success(records: &mut HashMap<String, AttemptRecord>, key: &str) {
     records.remove(key);
 }
 
+pub fn cancel_attempt(records: &mut HashMap<String, AttemptRecord>, key: &str) {
+    let Some(record) = records.get_mut(key) else {
+        return;
+    };
+    record.failures -= 1;
+    if record.failures == 0 {
+        records.remove(key);
+    }
+}
+
 pub fn cleanup(records: &mut HashMap<String, AttemptRecord>, now: DateTime<Utc>) {
+    if records.len() <= CLEANUP_THRESHOLD {
+        return;
+    }
     records.retain(|_, record| {
         now - record.last_failure < chrono::Duration::minutes(BLOCK_DURATION_MINUTES)
     });
@@ -40,7 +72,7 @@ pub fn blocked_for(
 ) -> Option<chrono::Duration> {
     let record = records.get(key)?;
     let remaining = record.last_failure + chrono::Duration::minutes(BLOCK_DURATION_MINUTES) - now;
-    (record.failures >= MAX_FAILURES && remaining > chrono::Duration::zero()).then_some(remaining)
+    (record.failures >= MAX_ATTEMPTS && remaining > chrono::Duration::zero()).then_some(remaining)
 }
 
 #[cfg(test)]
@@ -198,14 +230,14 @@ mod tests {
     #[test]
     fn atomic_registration_blocks_the_sixth_attempt() {
         let mut records = HashMap::new();
-        for _ in 0..MAX_FAILURES {
+        for _ in 0..MAX_ATTEMPTS {
             assert_eq!(register_attempt(&mut records, "a", now()), AttemptResult::Accepted);
         }
         assert!(matches!(
             register_attempt(&mut records, "a", now()),
             AttemptResult::Blocked(_)
         ));
-        assert_eq!(records["a"].failures, MAX_FAILURES);
+        assert_eq!(records["a"].failures, MAX_ATTEMPTS);
     }
 
     #[test]
