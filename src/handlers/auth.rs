@@ -445,6 +445,47 @@ mod tests {
         );
     }
 
+    #[sqlx::test]
+    async fn concurrent_wrong_password_requests_are_rate_limited(pool: MySqlPool) {
+        use tower::ServiceExt;
+
+        let client = LoginClient::new(pool).await;
+        let request = || {
+            axum::http::Request::builder()
+                .method("POST")
+                .uri("/auth/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, &client.cookie)
+                .header("x-forwarded-for", "203.0.113.1")
+                .body(axum::body::Body::from(format!(
+                    "password=wrong-password&csrf_token={}",
+                    client.csrf_token
+                )))
+                .unwrap()
+        };
+
+        let (one, two, three, four, five, six) = tokio::join!(
+            client.app.clone().oneshot(request()),
+            client.app.clone().oneshot(request()),
+            client.app.clone().oneshot(request()),
+            client.app.clone().oneshot(request()),
+            client.app.clone().oneshot(request()),
+            client.app.clone().oneshot(request()),
+        );
+        let responses = [
+            one.unwrap(),
+            two.unwrap(),
+            three.unwrap(),
+            four.unwrap(),
+            five.unwrap(),
+            six.unwrap(),
+        ];
+
+        assert!(responses
+            .iter()
+            .any(|response| response.status() == StatusCode::TOO_MANY_REQUESTS));
+    }
+
     #[tokio::test]
     async fn blocked_login_cleans_expired_records_without_touching_database() {
         let pool = sqlx::mysql::MySqlPoolOptions::new()
