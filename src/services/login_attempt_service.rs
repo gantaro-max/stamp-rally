@@ -136,4 +136,14 @@ mod tests {
         assert!(blocked_for(&records, "a", now()).is_some());
     }
 
+    #[test]
+    fn case11_cleanup_removes_only_expired_records() {
+        let mut records = five_failures();
+        record_failure(&mut records, "old", now() - chrono::Duration::seconds(1));
+        record_failure(&mut records, "fresh", now() + chrono::Duration::seconds(1));
+        cleanup(&mut records, now() + chrono::Duration::minutes(15));
+        assert_eq!(records.len(), 1);
+        assert!(records.contains_key("fresh"));
+    }
+
 }
