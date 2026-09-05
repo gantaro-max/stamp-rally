@@ -1,3 +1,59 @@
+use std::collections::HashMap;
+
+use chrono::{DateTime, Utc};
+
+pub const MAX_ATTEMPTS: u32 = 5;
+pub const BLOCK_DURATION_MINUTES: i64 = 15;
+pub const CLEANUP_THRESHOLD: usize = 1024;
+
+pub struct AttemptRecord {
+    pub attempts: u32,
+    pub last_attempt: DateTime<Utc>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum AttemptResult {
+    Accepted,
+    Blocked(chrono::Duration),
+}
+
+pub fn register_attempt(
+    records: &mut HashMap<String, AttemptRecord>,
+    key: &str,
+    now: DateTime<Utc>,
+) -> AttemptResult {
+    if let Some(record) = records.get(key) {
+        let remaining = record.last_attempt + chrono::Duration::minutes(BLOCK_DURATION_MINUTES) - now;
+        if record.attempts >= MAX_ATTEMPTS && remaining > chrono::Duration::zero() {
+            return AttemptResult::Blocked(remaining);
+        }
+    }
+
+    let record = records.entry(key.to_owned()).or_insert(AttemptRecord {
+        attempts: 0,
+        last_attempt: now,
+    });
+    if now - record.last_attempt >= chrono::Duration::minutes(BLOCK_DURATION_MINUTES) {
+        record.attempts = 0;
+    }
+    record.attempts += 1;
+    record.last_attempt = now;
+    AttemptResult::Accepted
+}
+
+pub fn record_success(records: &mut HashMap<String, AttemptRecord>, key: &str) {
+    records.remove(key);
+}
+
+pub fn cleanup(records: &mut HashMap<String, AttemptRecord>, now: DateTime<Utc>) {
+    if records.len() <= CLEANUP_THRESHOLD {
+        return;
+    }
+    records.retain(|_, record| {
+        now - record.last_attempt < chrono::Duration::minutes(BLOCK_DURATION_MINUTES)
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
