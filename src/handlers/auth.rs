@@ -159,4 +159,31 @@ mod tests {
         assert!([a.unwrap(), b.unwrap(), c.unwrap(), d.unwrap(), e.unwrap(), f.unwrap()]
             .iter().any(|response| response.status() == StatusCode::TOO_MANY_REQUESTS));
     }
+
+    fn forwarded_for(value: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", value.parse().unwrap());
+        headers
+    }
+
+    #[test]
+    fn cases13_to_17_extract_or_default_the_forwarded_ip() {
+        assert_eq!(client_ip(&forwarded_for("203.0.113.1")), "203.0.113.1");
+        assert_eq!(client_ip(&forwarded_for("198.51.100.9, 203.0.113.1")), "203.0.113.1");
+        assert_eq!(client_ip(&forwarded_for("198.51.100.9 , 203.0.113.1 ")), "203.0.113.1");
+        assert_eq!(client_ip(&HeaderMap::new()), "unknown");
+        for value in ["", ",", " , "] { assert_eq!(client_ip(&forwarded_for(value)), "unknown"); }
+    }
+
+    #[test]
+    fn cases18_to_20_only_trust_the_last_forwarded_header_line() {
+        let mut headers = forwarded_for("198.51.100.9");
+        headers.append("x-forwarded-for", "192.0.2.9, 203.0.113.1".parse().unwrap());
+        assert_eq!(client_ip(&headers), "203.0.113.1");
+        headers.append("x-forwarded-for", axum::http::HeaderValue::from_bytes(&[0xff]).unwrap());
+        assert_eq!(client_ip(&headers), "unknown");
+        let mut headers = forwarded_for("198.51.100.9");
+        headers.append("x-forwarded-for", " , ".parse().unwrap());
+        assert_eq!(client_ip(&headers), "unknown");
+    }
 }
