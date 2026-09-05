@@ -2,7 +2,7 @@ use askama::Template;
 use axum::{
     Form,
     extract::State,
-    http::{StatusCode, header},
+    http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Response},
 };
 use serde::Deserialize;
@@ -27,6 +27,10 @@ pub struct LoginForm {
 #[derive(Deserialize)]
 pub struct LogoutForm {
     csrf_token: Option<String>,
+}
+
+fn client_ip(headers: &HeaderMap) -> &str {
+    headers.get("x-forwarded-for").unwrap().to_str().unwrap()
 }
 
 pub async fn login_form(session: Session) -> Response {
