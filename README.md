@@ -262,7 +262,7 @@ Codex の一次レビューを経たコードに対し、以下の観点でサ�
 | 指標 | 値 |
 |:--|:--|
 | Rust コード | 約 10,200 行 |
-| テスト | 83 件 |
+| テスト | 212 件（うち DB 結合テスト 128 件） |
 | マージ済み PR | 32 |
 | 実装指示書 | 37 本 |
 | コミット | 115 |
@@ -308,9 +308,16 @@ cargo run
 管理画面は `http://localhost:8099/auth/login`。ログインパスワードは `.env.example` に設定済みのローカル開発専用値を使用する。
 
 ```bash
-cargo test      # テスト（83 件）
+cargo test      # テスト（212 件）
 cargo clippy    # Lint
 ```
+
+> **DB 結合テストについて**
+> 212 件のうち 128 件は `#[sqlx::test]` による DB 結合テストで、テストごとに使い捨てのデータベース（`_sqlx_test_*`）を作成する。そのため `DATABASE_URL` には**データベースを作成・削除できる権限を持つユーザー**を指定する必要がある。アプリ用の一般ユーザーのままだと、これら 128 件が `Access denied ... to database '_sqlx_test_...'` で失敗する。
+>
+> ```bash
+> DATABASE_URL="mysql://root:<MYSQL_ROOT_PASSWORD>@db:3306/stamprally" cargo test
+> ```
 
 LINE Bot 部分を実際に動かすには、LINE 公式アカウント（Messaging API チャネル）と LIFF アプリの登録、および公開 URL が必要になる。チャネル発行から Koyeb へのデプロイまでの手順は [docs/deployment.md](docs/deployment.md) にまとめている。
 
