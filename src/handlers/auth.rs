@@ -28,6 +28,11 @@ pub struct LogoutForm {
     csrf_token: Option<String>,
 }
 
+fn retry_after_seconds(remaining: chrono::Duration) -> i64 {
+    let seconds = remaining.num_seconds();
+    seconds + i64::from(remaining > chrono::Duration::seconds(seconds))
+}
+
 fn client_ip(headers: &HeaderMap) -> &str {
     headers.get("x-forwarded-for")
         .and_then(|value| value.to_str().ok())
@@ -57,9 +62,11 @@ pub async fn login(
         };
         login_attempt_service::blocked_for(&records, key, chrono::Utc::now())
     };
-    if blocked.is_some() {
+    if let Some(remaining) = blocked {
         let mut response = render_login(session, Some("試行回数の上限に達しました。しばらく待ってから再度お試しください")).await;
         *response.status_mut() = StatusCode::TOO_MANY_REQUESTS;
+        response.headers_mut().insert(header::RETRY_AFTER,
+            retry_after_seconds(remaining).to_string().parse().expect("integer is a valid header value"));
         return response;
     }
 
