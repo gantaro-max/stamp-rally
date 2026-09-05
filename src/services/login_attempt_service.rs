@@ -85,4 +85,13 @@ mod tests {
         assert_eq!(blocked_for(&five_failures(), "a", now() + chrono::Duration::minutes(15)), None);
     }
 
+    #[test]
+    fn case07_remaining_time_tracks_elapsed_time() {
+        let records = five_failures();
+        for (elapsed, remaining) in [(1, 899), (123, 777), (450, 450)] {
+            assert_eq!(blocked_for(&records, "a", now() + chrono::Duration::seconds(elapsed)), Some(chrono::Duration::seconds(remaining)));
+        }
+        assert_eq!(blocked_for(&records, "a", now() + chrono::Duration::milliseconds(899_500)), Some(chrono::Duration::milliseconds(500)));
+    }
+
 }
