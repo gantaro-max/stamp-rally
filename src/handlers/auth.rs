@@ -88,3 +88,20 @@ async fn render_login(session: Session, error_message: Option<&'static str>) -> 
 fn redirect_to(location: &'static str) -> Response {
     (StatusCode::FOUND, [(header::LOCATION, location)]).into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderMap;
+
+    fn forwarded_for(value: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", value.parse().unwrap());
+        headers
+    }
+
+    #[test]
+    fn case12_single_forwarded_ip() {
+        assert_eq!(client_ip(&forwarded_for("203.0.113.1")), "203.0.113.1");
+    }
+}
