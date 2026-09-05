@@ -127,4 +127,15 @@ mod tests {
         assert_eq!(client_ip(&HeaderMap::new()), "unknown");
     }
 
+    #[test]
+    fn case16_empty_forwarded_values_use_unknown() {
+        for value in ["", ",", " , , ", "   "] {
+            assert_eq!(client_ip(&forwarded_for(value)), "unknown");
+        }
+        assert_eq!(client_ip(&forwarded_for("198.51.100.9, 203.0.113.1, , ")), "203.0.113.1");
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", axum::http::HeaderValue::from_bytes(&[0xff]).unwrap());
+        assert_eq!(client_ip(&headers), "unknown");
+    }
+
 }
