@@ -2,14 +2,13 @@ use askama::Template;
 use axum::{
     Form,
     extract::State,
-    http::{StatusCode, header},
+    http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Response},
 };
 use serde::Deserialize;
-use sqlx::MySqlPool;
 use tower_sessions::Session;
 
-use crate::services::{auth_service, csrf_service};
+use crate::{AppState, services::{auth_service, csrf_service, login_attempt_service}};
 
 #[derive(Template)]
 #[template(path = "auth/login.html")]
@@ -33,17 +32,50 @@ pub async fn login_form(session: Session) -> Response {
     render_login(session, None).await
 }
 
+fn client_ip(headers: &HeaderMap) -> &str {
+    headers.get_all("x-forwarded-for").iter().next_back()
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.rsplit(',').map(str::trim).find(|ip| !ip.is_empty()))
+        .unwrap_or("unknown")
+}
+
+fn retry_after_seconds(remaining: chrono::Duration) -> i64 {
+    let seconds = remaining.num_seconds();
+    seconds + i64::from(remaining > chrono::Duration::seconds(seconds))
+}
+
 pub async fn login(
-    State(pool): State<MySqlPool>,
+    State(state): State<AppState>,
     session: Session,
+    headers: HeaderMap,
     Form(form): Form<LoginForm>,
 ) -> Response {
     if !csrf_service::verify_token(&session, form.csrf_token.as_deref().unwrap_or("")).await {
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    match auth_service::try_login(&pool, &form.password).await {
+    let key = client_ip(&headers);
+    let now = chrono::Utc::now();
+    let attempt = {
+        let mut records = match state.login_attempts.lock() {
+            Ok(records) => records,
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+        login_attempt_service::cleanup(&mut records, now);
+        login_attempt_service::register_attempt(&mut records, key, now)
+    };
+    if let login_attempt_service::AttemptResult::Blocked(remaining) = attempt {
+        let mut response = render_login(session, Some("試行回数の上限に達しました。しばらく待ってから再度お試しください")).await;
+        *response.status_mut() = StatusCode::TOO_MANY_REQUESTS;
+        response.headers_mut().insert(header::RETRY_AFTER, retry_after_seconds(remaining).to_string().parse().unwrap());
+        return response;
+    }
+
+    match auth_service::try_login(&state.pool, &form.password).await {
         Ok(true) => {
+            if let Ok(mut records) = state.login_attempts.lock() {
+                login_attempt_service::record_success(&mut records, key);
+            } else { return StatusCode::INTERNAL_SERVER_ERROR.into_response(); }
             if session.insert("admin_authenticated", true).await.is_err() {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
