@@ -88,3 +88,43 @@ async fn render_login(session: Session, error_message: Option<&'static str>) -> 
 fn redirect_to(location: &'static str) -> Response {
     (StatusCode::FOUND, [(header::LOCATION, location)]).into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{Router, body::{Body, to_bytes}, http::Request};
+    use sqlx::MySqlPool;
+    use tower::ServiceExt;
+
+    async fn login_client(pool: MySqlPool) -> (Router, String, String) {
+        crate::services::auth_service::seed_admin_event_if_empty(&pool, "admin-secret", "Stamp Rally")
+            .await
+            .unwrap();
+        let app = crate::app_router(pool);
+        let response = app.clone().oneshot(Request::builder().uri("/auth/login").body(Body::empty()).unwrap()).await.unwrap();
+        let cookie = response.headers()[header::SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_owned();
+        let body = String::from_utf8(to_bytes(response.into_body(), usize::MAX).await.unwrap().to_vec()).unwrap();
+        let csrf = body.split("name=\"csrf_token\" value=\"").nth(1).unwrap().split('"').next().unwrap().to_owned();
+        (app, cookie, csrf)
+    }
+
+    #[sqlx::test]
+    async fn case29_concurrent_attempts_are_rate_limited(pool: MySqlPool) {
+        let (app, cookie, csrf) = login_client(pool).await;
+        let request = || Request::builder()
+            .method("POST")
+            .uri("/auth/login")
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .header(header::COOKIE, &cookie)
+            .header("x-forwarded-for", "203.0.113.1")
+            .body(Body::from(format!("password=wrong&csrf_token={csrf}")))
+            .unwrap();
+        let (a, b, c, d, e, f) = tokio::join!(
+            app.clone().oneshot(request()), app.clone().oneshot(request()),
+            app.clone().oneshot(request()), app.clone().oneshot(request()),
+            app.clone().oneshot(request()), app.clone().oneshot(request()),
+        );
+        assert!([a.unwrap(), b.unwrap(), c.unwrap(), d.unwrap(), e.unwrap(), f.unwrap()]
+            .iter().any(|response| response.status() == StatusCode::TOO_MANY_REQUESTS));
+    }
+}
