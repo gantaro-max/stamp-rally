@@ -26,4 +26,12 @@ mod tests {
     fn case01_empty_store_is_not_blocked() {
         assert_eq!(blocked_for(&HashMap::new(), "a", now()), None);
     }
+    #[test]
+    fn case02_one_failure_is_not_blocked() {
+        let mut records = HashMap::new();
+        record_failure(&mut records, "a", now());
+        assert_eq!(records["a"].failures, 1);
+        assert_eq!(blocked_for(&records, "a", now()), None);
+    }
+
 }
