@@ -26,6 +26,10 @@ pub fn record_success(records: &mut HashMap<String, AttemptRecord>, key: &str) {
     records.remove(key);
 }
 
+pub fn cleanup(records: &mut HashMap<String, AttemptRecord>, now: DateTime<Utc>) {
+    records.retain(|_, record| now - record.last_failure < chrono::Duration::minutes(BLOCK_DURATION_MINUTES));
+}
+
 pub fn blocked_for(
     records: &HashMap<String, AttemptRecord>,
     key: &str,
