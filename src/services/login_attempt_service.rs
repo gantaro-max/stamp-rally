@@ -74,4 +74,9 @@ mod tests {
         assert_eq!(blocked_for(&five_failures(), "a", now()), Some(chrono::Duration::minutes(15)));
     }
 
+    #[test]
+    fn case05_still_blocked_after_fourteen_minutes_fifty_nine_seconds() {
+        assert_eq!(blocked_for(&five_failures(), "a", now() + chrono::Duration::seconds(899)), Some(chrono::Duration::seconds(1)));
+    }
+
 }
