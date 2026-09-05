@@ -108,4 +108,9 @@ mod tests {
     fn case12_single_forwarded_ip() {
         assert_eq!(client_ip(&forwarded_for("203.0.113.1")), "203.0.113.1");
     }
+    #[test]
+    fn case13_uses_rightmost_forwarded_ip() {
+        assert_eq!(client_ip(&forwarded_for("198.51.100.9, 203.0.113.1")), "203.0.113.1");
+    }
+
 }
