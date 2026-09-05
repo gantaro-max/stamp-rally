@@ -137,4 +137,73 @@ mod tests {
         assert_eq!(client_ip(&headers), "unknown");
     }
 
+    struct LoginClient {
+        app: axum::Router,
+        cookie: String,
+        csrf_token: String,
+    }
+
+    impl LoginClient {
+        async fn new(pool: MySqlPool) -> Self {
+            auth_service::seed_admin_event_if_empty(&pool, "admin-secret", "Stamp Rally")
+                .await.unwrap();
+            let state = crate::AppState::new(pool, "secret", "token", "https://example.test", "liff", "channel", None);
+            Self::with_state(state).await
+        }
+
+        async fn with_state(state: crate::AppState) -> Self {
+            use tower::ServiceExt;
+            let app = axum::Router::new()
+                .route("/auth/login", axum::routing::get(login_form).post(login))
+                .with_state(state)
+                .layer(tower_sessions::SessionManagerLayer::new(tower_sessions::MemoryStore::default()));
+            let response = app.clone().oneshot(axum::http::Request::builder()
+                .uri("/auth/login").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let cookie = response.headers()[header::SET_COOKIE].to_str().unwrap()
+                .split(';').next().unwrap().to_owned();
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let body = String::from_utf8(body.to_vec()).unwrap();
+            let csrf_token = body.split("name=\"csrf_token\" value=\"").nth(1).unwrap()
+                .split('"').next().unwrap().to_owned();
+            Self { app, cookie, csrf_token }
+        }
+
+        async fn post(&mut self, ip: &str, password: &str, valid_csrf: bool) -> Response {
+            use tower::ServiceExt;
+            let csrf = if valid_csrf { &self.csrf_token } else { "invalid-token" };
+            let response = self.app.clone().oneshot(axum::http::Request::builder()
+                .method("POST").uri("/auth/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, &self.cookie)
+                .header("x-forwarded-for", ip)
+                .body(axum::body::Body::from(format!("password={password}&csrf_token={csrf}")))
+                .unwrap()).await.unwrap();
+            if let Some(cookie) = response.headers().get(header::SET_COOKIE) {
+                self.cookie = cookie.to_str().unwrap().split(';').next().unwrap().to_owned();
+            }
+            response
+        }
+
+        async fn fail(&mut self, ip: &str, count: usize) {
+            for _ in 0..count {
+                let response = self.post(ip, "wrong-password", true).await;
+                assert_eq!(response.status(), StatusCode::OK);
+                let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+                assert!(String::from_utf8(body.to_vec()).unwrap().contains("パスワードが正しくありません"));
+            }
+        }
+    }
+
+    #[sqlx::test]
+    async fn case17_correct_fifth_attempt_succeeds(pool: MySqlPool) {
+        let mut client = LoginClient::new(pool).await;
+        client.fail("203.0.113.1", 4).await;
+        let old_cookie = client.cookie.clone();
+        let response = client.post("203.0.113.1", "admin-secret", true).await;
+        assert_eq!(response.status(), StatusCode::FOUND);
+        assert_eq!(response.headers()[header::LOCATION], "/admin/dashboard");
+        assert_ne!(client.cookie, old_cookie);
+    }
+
 }
