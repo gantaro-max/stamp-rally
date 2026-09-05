@@ -41,4 +41,15 @@ mod tests {
         assert_eq!(blocked_for(&records, "a", now()), None);
     }
 
+    #[test]
+    fn case03_four_failures_are_not_blocked() {
+        let mut records = HashMap::new();
+        for seconds in 0..4 {
+            record_failure(&mut records, "a", now() + chrono::Duration::seconds(seconds));
+        }
+        assert_eq!(records["a"].failures, 4);
+        assert_eq!(records["a"].last_failure, now() + chrono::Duration::seconds(3));
+        assert_eq!(blocked_for(&records, "a", now() + chrono::Duration::seconds(3)), None);
+    }
+
 }
