@@ -40,11 +40,9 @@ fn client_ip(headers: &HeaderMap) -> &str {
     headers
         .get_all("x-forwarded-for")
         .iter()
-        .rev()
-        .filter_map(|value| value.to_str().ok())
-        .flat_map(|value| value.rsplit(','))
-        .map(str::trim)
-        .find(|ip| !ip.is_empty())
+        .next_back()
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.rsplit(',').map(str::trim).find(|ip| !ip.is_empty()))
         .unwrap_or("unknown")
 }
 
@@ -63,16 +61,16 @@ pub async fn login(
     }
 
     let key = client_ip(&headers);
-    let blocked = {
+    let now = chrono::Utc::now();
+    let attempt = {
         let mut records = match state.login_attempts.lock() {
             Ok(records) => records,
             Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         };
-        let now = chrono::Utc::now();
         login_attempt_service::cleanup(&mut records, now);
-        login_attempt_service::blocked_for(&records, key, now)
+        login_attempt_service::register_attempt(&mut records, key, now)
     };
-    if let Some(remaining) = blocked {
+    if let login_attempt_service::AttemptResult::Blocked(remaining) = attempt {
         let mut response = render_login(
             session,
             Some("試行回数の上限に達しました。しばらく待ってから再度お試しください"),
@@ -106,17 +104,15 @@ pub async fn login(
             }
             redirect_to("/admin/dashboard")
         }
-        Ok(false) => {
-            {
-                let mut records = match state.login_attempts.lock() {
-                    Ok(records) => records,
-                    Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-                };
-                login_attempt_service::record_failure(&mut records, key, chrono::Utc::now());
-            }
-            render_login(session, Some("パスワードが正しくありません")).await
+        Ok(false) => render_login(session, Some("パスワードが正しくありません")).await,
+        Err(_) => {
+            let mut records = match state.login_attempts.lock() {
+                Ok(records) => records,
+                Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            };
+            login_attempt_service::cancel_attempt(&mut records, key);
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
@@ -208,6 +204,7 @@ mod tests {
 
     struct LoginClient {
         app: axum::Router,
+        state: crate::AppState,
         cookie: String,
         csrf_token: String,
     }
@@ -233,7 +230,7 @@ mod tests {
             use tower::ServiceExt;
             let app = axum::Router::new()
                 .route("/auth/login", axum::routing::get(login_form).post(login))
-                .with_state(state)
+                .with_state(state.clone())
                 .layer(tower_sessions::SessionManagerLayer::new(
                     tower_sessions::MemoryStore::default(),
                 ));
@@ -269,6 +266,7 @@ mod tests {
                 .to_owned();
             Self {
                 app,
+                state,
                 cookie,
                 csrf_token,
             }
@@ -484,6 +482,7 @@ mod tests {
         assert!(responses
             .iter()
             .any(|response| response.status() == StatusCode::TOO_MANY_REQUESTS));
+        assert!(client.state.login_attempts.lock().unwrap()["203.0.113.1"].failures <= 5);
     }
 
     #[tokio::test]
@@ -504,6 +503,15 @@ mod tests {
         let now = chrono::Utc::now();
         {
             let mut records = state.login_attempts.lock().unwrap();
+            for index in 0..=login_attempt_service::CLEANUP_THRESHOLD {
+                records.insert(
+                    format!("active-{index}"),
+                    login_attempt_service::AttemptRecord {
+                        failures: 1,
+                        last_failure: now,
+                    },
+                );
+            }
             login_attempt_service::record_failure(
                 &mut records,
                 "expired",
