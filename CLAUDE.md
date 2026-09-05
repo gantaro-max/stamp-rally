@@ -146,7 +146,8 @@ LINE Bot を使った建物内スタンプラリーアプリ。1建物・最大1
 | [docs/database.md](docs/database.md) | テーブル設計 |
 | [docs/api.md](docs/api.md) | エンドポイント設計 |
 | [docs/operator-guide.md](docs/operator-guide.md) | 運営マニュアル |
-| [README.md](README.md) | 開発環境構築 |
+| [README.md](README.md) | プロジェクト紹介（対外向け）・ローカル起動 |
+| [docs/deployment.md](docs/deployment.md) | LINEチャネル発行・Koyebデプロイ手順 |
 | [AGENTS.md](AGENTS.md) | コーディング規約・Codexの役割 |
 | [SECURITY.md](SECURITY.md) | セキュリティポリシー |
 | [CHANGELOG.md](CHANGELOG.md) | 変更履歴 |
