@@ -224,11 +224,11 @@ $ git log --oneline
 52c7530 Design admin image preview and add implementation instructions
 ```
 
-「設計・指示書作成」→「実装 PR」→「ドキュメント反映」の 3 コミットが、**全 32 PR にわたって**繰り返されている。
+「設計・指示書作成」→「実装 PR」→「ドキュメント反映」の 3 コミットが、機能ごとに繰り返されている。ワークフローを確立する前の最初期（#1・#2）を除き、すべての機能追加がこの形をとっている。
 
 **2. Red-Green-Refactor が実際に守られている**
 
-各 PR は Squash merge されているが、コミットメッセージ本文に元の粒度が保存されている。
+各 PR は Squash merge されているが、多くはコミットメッセージ本文に元の粒度が保存されている。
 
 ```
 $ git log -1 --format=%b 292930e
@@ -237,9 +237,11 @@ $ git log -1 --format=%b 292930e
 * refactor: simplify stamp card handler data type
 ```
 
-**全 PR が例外なく `test:`（失敗するテスト）から始まっている。** 実装を正当化するための後付けテストではないことが履歴から確認できる。
+粒度が残っている 28 件の PR のうち、**26 件が `test:`（失敗するテスト）から始まっている。** 実装を正当化するための後付けテストではないことが履歴から確認できる。
 
-**3. 実装指示書が 37 本残っている**
+残りの内訳も記しておく。`test:` から始まらない 2 件は、TDD 運用を確立する前の初期セットアップ（#2）と、振る舞いを持たない小規模な堅牢化（#11）。ほかに 6 件は Squash 時に単一コミットへまとめられており、`main` の履歴からは粒度を判定できない。これらの多くは [AGENTS.md](AGENTS.md) の「振る舞いを持たない変更は TDD サイクルの対象外でよい」という規定に該当する変更である。
+
+**3. 実装指示書が 38 本残っている**
 
 [instructions/done/](instructions/done/) に、機能ごとの実装指示書（背景・目的、対象ファイル、テストケース一覧、実装仕様、制約、完了条件）が全て残っている。実装前にどこまで設計が固まっていたかを直接読める。
 
@@ -263,9 +265,9 @@ Codex の一次レビューを経たコードに対し、以下の観点でサ�
 |:--|:--|
 | Rust コード | 約 10,200 行 |
 | テスト | 212 件（うち DB 結合テスト 128 件） |
-| マージ済み PR | 32 |
-| 実装指示書 | 37 本 |
-| コミット | 115 |
+| マージ済み PR | 33 |
+| 実装指示書 | 38 本 |
+| コミット | 120 |
 
 役割定義の詳細は [CLAUDE.md](CLAUDE.md)（PM 側）と [AGENTS.md](AGENTS.md)（実装側のコーディング規約・TDD 手順）に記述している。
 
@@ -335,7 +337,7 @@ LINE Bot 部分を実際に動かすには、LINE 公式アカウント（Messag
 | [CHANGELOG.md](CHANGELOG.md) | 変更履歴 |
 | [CLAUDE.md](CLAUDE.md) | PM エージェントの役割定義とワークフロー |
 | [AGENTS.md](AGENTS.md) | 実装エージェントのコーディング規約・TDD 手順 |
-| [instructions/done/](instructions/done/) | 全 37 本の実装指示書 |
+| [instructions/done/](instructions/done/) | 全 38 本の実装指示書 |
 
 ---
 
@@ -355,4 +357,4 @@ Participants add the event's LINE Official Account as a friend, receive randomly
 
 Stack: Rust (edition 2024), Axum, Tokio, sqlx (MySQL / TiDB Serverless), Askama, Argon2, LINE Messaging API and LIFF — all API integration written from scratch without an official SDK.
 
-This repository also documents an **AI-agent-divided TDD workflow**: Claude acted as PM (requirements, architecture, implementation specs, multi-agent final review) and never wrote code, while Codex implemented every feature test-first on `feature/*` branches. All 32 PRs begin with a failing-test commit, and all 37 implementation specs are preserved under [instructions/done/](instructions/done/).
+This repository also documents an **AI-agent-divided TDD workflow**: Claude acted as PM (requirements, architecture, implementation specs, multi-agent final review) and never wrote code, while Codex implemented every feature test-first on `feature/*` branches. Of the PRs whose squashed bodies preserve their original commit granularity, 26 of 28 begin with a failing-test commit, and all 38 implementation specs are preserved under [instructions/done/](instructions/done/).

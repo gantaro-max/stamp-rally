@@ -4,11 +4,22 @@
 
 ## [Unreleased]
 
+### Fixed
+- devcontainer内で`cargo test`が212件中128件失敗する問題を解消（#33）
+  - 原因はコードではなくローカル開発DBの権限不足。`#[sqlx::test]`はテスト関数ごとに使い捨てDB`_sqlx_test_<hash>`（sqlx-core 0.8.6の`TestSupport::db_name`既定実装が生成する63文字固定の名前）を作成・削除するが、MySQL公式イメージは`MYSQL_USER`に``GRANT ALL PRIVILEGES ON `stamprally`.*``しか付与しないため、`create database`が`Access denied`で失敗していた（管理台帳テーブル`_sqlx_test_databases`は`DATABASE_URL`が指す`stamprally`内に作られるため既存権限で足りていた）
+  - `.devcontainer/grant-sqlx-test.sh`を追加し、``GRANT ALL PRIVILEGES ON `\_sqlx\_test\_%`.*``を対象ユーザーへ付与する。`postCreateCommand`から冪等に実行する。識別子パターンのアンダースコアはエスケープしており（GRANTでは`_`が1文字ワイルドカード）、権限は`_sqlx_test_`で始まる名前のデータベースに限定される。グローバル権限は`USAGE`のまま増えない
+  - スクリプト実行に必要な`default-mysql-client`を`.devcontainer/Dockerfile`へ追加した。**この変更が反映されるのはコンテナ再ビルド後**であり、従来のdevcontainerを使い続けている場合はリビルドが必要（`README.md`に明記）
+  - 本変更はローカル開発環境専用であり、本番DB（TiDB Serverless）の接続ユーザー・権限には影響しない
+  - あわせて`AGENTS.md`の「`sqlx::test`系のDB接続エラーは既知の環境制約でセルフチェックの対象外」とする記述を、DB結合テストをセルフチェック対象に含める内容へ更新した
+
 ### Changed
 - ポートフォリオとしての一般公開に向けて`README.md`を全面的に書き直した
   - 課題設定・主な機能・アーキテクチャ・設計判断の抜粋・開発プロセス（AIエージェント分業によるTDD）・セキュリティ対策を、リポジトリを初めて見る第三者向けに再構成した。技術選定の背景や「やらないことの判断」（QR不正利用対策を運用でカバーする方針等）も明示している
   - `LICENSE`（MIT License）を追加。同梱フォントNoto Sans JPは従来どおりSIL Open Font License 1.1（`assets/fonts/OFL.txt`）に基づく
   - 旧README「本番デプロイ（Koyeb）」節の作業手順を[docs/deployment.md](docs/deployment.md)へ移設した（内容は無変更）。設計判断は従来どおり`docs/architecture.md`18節にあり、本ドキュメントは実作業手順のみを扱う。**本エントリより前のCHANGELOGが参照している`README.md`「本番デプロイ（Koyeb）」は、現在は`docs/deployment.md`を指す**
+- `README.md`のTDD遵守に関する記述を、実際の履歴に合わせて訂正した
+  - 「全PRが例外なく`test:`から始まっている」と記載していたが、全PRマージコミットを機械的に検査したところ事実ではなかった。正しくは「コミット粒度が本文に残っている28件のうち26件が`test:`から始まる」であり、例外2件（TDD運用確立前の初期セットアップ#2、振る舞いを持たない小規模な堅牢化#11）と、Squash時に単一コミットへまとめられ粒度を判定できない6件が存在する
+  - 検証可能性を掲げるドキュメントで、読み手が同じ検査を行えば破綻する記述になっていたため、内訳を含めて明示する形に改めた。あわせて規模の数値（PR数・指示書数・コミット数）を現状値へ更新した
 
 ### Added
 - 管理画面（部屋一覧・部屋編集・イベント設定）に、現在アップロード済みの画像のサムネイルプレビューを追加（#32）
