@@ -323,4 +323,12 @@ mod tests {
         assert_eq!(records["203.0.113.1"].last_failure, now);
     }
 
+    #[test]
+    fn repeated_forwarded_headers_use_the_last_nonempty_ip() {
+        let mut headers = forwarded_for("198.51.100.9");
+        headers.append("x-forwarded-for", "192.0.2.9, 203.0.113.1".parse().unwrap());
+        headers.append("x-forwarded-for", " , ".parse().unwrap());
+        assert_eq!(client_ip(&headers), "203.0.113.1");
+    }
+
 }
