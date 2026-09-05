@@ -530,11 +530,20 @@ mod tests {
     }
 
     #[test]
-    fn repeated_forwarded_headers_use_the_last_nonempty_ip() {
+    fn invalid_last_forwarded_header_does_not_fall_back_to_an_earlier_line() {
         let mut headers = forwarded_for("198.51.100.9");
-        headers.append("x-forwarded-for", "192.0.2.9, 203.0.113.1".parse().unwrap());
+        headers.append(
+            "x-forwarded-for",
+            axum::http::HeaderValue::from_bytes(&[0xff]).unwrap(),
+        );
+        assert_eq!(client_ip(&headers), "unknown");
+    }
+
+    #[test]
+    fn empty_last_forwarded_header_does_not_fall_back_to_an_earlier_line() {
+        let mut headers = forwarded_for("198.51.100.9");
         headers.append("x-forwarded-for", " , ".parse().unwrap());
-        assert_eq!(client_ip(&headers), "203.0.113.1");
+        assert_eq!(client_ip(&headers), "unknown");
     }
 
     #[test]
