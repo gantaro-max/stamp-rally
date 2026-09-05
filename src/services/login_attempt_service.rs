@@ -126,4 +126,14 @@ mod tests {
         assert_eq!(blocked_for(&records, "a", now()), None);
     }
 
+    #[test]
+    fn case10_keys_are_independent() {
+        let mut records = five_failures();
+        assert_eq!(blocked_for(&records, "b", now()), None);
+        record_failure(&mut records, "b", now());
+        assert_eq!(blocked_for(&records, "b", now()), None);
+        record_success(&mut records, "b");
+        assert!(blocked_for(&records, "a", now()).is_some());
+    }
+
 }
