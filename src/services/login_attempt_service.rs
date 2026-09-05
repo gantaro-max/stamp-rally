@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 
 pub const MAX_FAILURES: u32 = 5;
 pub const BLOCK_DURATION_MINUTES: i64 = 15;
+pub const CLEANUP_THRESHOLD: usize = 1024;
 
 pub struct AttemptRecord {
     pub failures: u32,
@@ -177,11 +178,63 @@ mod tests {
 
     #[test]
     fn case11_cleanup_removes_only_expired_records() {
-        let mut records = five_failures();
+        let mut records = HashMap::new();
+        for index in 0..=CLEANUP_THRESHOLD {
+            records.insert(
+                format!("key-{index}"),
+                AttemptRecord {
+                    failures: 1,
+                    last_failure: now(),
+                },
+            );
+        }
         record_failure(&mut records, "old", now() - chrono::Duration::seconds(1));
         record_failure(&mut records, "fresh", now() + chrono::Duration::seconds(1));
         cleanup(&mut records, now() + chrono::Duration::minutes(15));
         assert_eq!(records.len(), 1);
         assert!(records.contains_key("fresh"));
+    }
+
+    #[test]
+    fn atomic_registration_blocks_the_sixth_attempt() {
+        let mut records = HashMap::new();
+        for _ in 0..MAX_FAILURES {
+            assert_eq!(register_attempt(&mut records, "a", now()), AttemptResult::Accepted);
+        }
+        assert!(matches!(
+            register_attempt(&mut records, "a", now()),
+            AttemptResult::Blocked(_)
+        ));
+        assert_eq!(records["a"].failures, MAX_FAILURES);
+    }
+
+    #[test]
+    fn successful_login_resets_atomic_attempt_registration() {
+        let mut records = HashMap::new();
+        for _ in 0..4 {
+            assert_eq!(register_attempt(&mut records, "a", now()), AttemptResult::Accepted);
+        }
+        record_success(&mut records, "a");
+        assert_eq!(register_attempt(&mut records, "a", now()), AttemptResult::Accepted);
+        assert_eq!(records["a"].failures, 1);
+    }
+
+    #[test]
+    fn cancelling_an_attempt_restores_the_previous_count() {
+        let mut records = HashMap::new();
+        register_attempt(&mut records, "a", now());
+        register_attempt(&mut records, "a", now());
+        cancel_attempt(&mut records, "a");
+        assert_eq!(records["a"].failures, 1);
+        cancel_attempt(&mut records, "a");
+        assert!(!records.contains_key("a"));
+    }
+
+    #[test]
+    fn cleanup_skips_stores_at_or_below_the_threshold() {
+        let mut records = HashMap::new();
+        record_failure(&mut records, "expired", now());
+        cleanup(&mut records, now() + chrono::Duration::minutes(15));
+        assert!(records.contains_key("expired"));
     }
 }
