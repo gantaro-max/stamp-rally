@@ -4,6 +4,7 @@ pub mod event_service;
 pub mod game_service;
 pub mod image_service;
 pub mod line_client;
+pub mod login_attempt_service;
 pub mod qr_service;
 pub mod ranking_service;
 pub mod room_service;
