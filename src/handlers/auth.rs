@@ -56,11 +56,13 @@ pub async fn login(
 
     let key = client_ip(&headers);
     let blocked = {
-        let records = match state.login_attempts.lock() {
+        let mut records = match state.login_attempts.lock() {
             Ok(records) => records,
             Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         };
-        login_attempt_service::blocked_for(&records, key, chrono::Utc::now())
+        let now = chrono::Utc::now();
+        login_attempt_service::cleanup(&mut records, now);
+        login_attempt_service::blocked_for(&records, key, now)
     };
     if let Some(remaining) = blocked {
         let mut response = render_login(session, Some("試行回数の上限に達しました。しばらく待ってから再度お試しください")).await;
