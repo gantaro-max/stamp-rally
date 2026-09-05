@@ -22,10 +22,10 @@ pub fn record_failure(records: &mut HashMap<String, AttemptRecord>, key: &str, n
 pub fn blocked_for(
     records: &HashMap<String, AttemptRecord>,
     key: &str,
-    _now: DateTime<Utc>,
+    now: DateTime<Utc>,
 ) -> Option<chrono::Duration> {
     let record = records.get(key)?;
-    (record.failures >= MAX_FAILURES).then_some(chrono::Duration::minutes(BLOCK_DURATION_MINUTES))
+    (record.failures >= MAX_FAILURES).then_some(record.last_failure + chrono::Duration::minutes(BLOCK_DURATION_MINUTES) - now)
 }
 
 #[cfg(test)]
