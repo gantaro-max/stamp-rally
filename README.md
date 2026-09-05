@@ -313,11 +313,9 @@ cargo clippy    # Lint
 ```
 
 > **DB 結合テストについて**
-> 212 件のうち 128 件は `#[sqlx::test]` による DB 結合テストで、テストごとに使い捨てのデータベース（`_sqlx_test_*`）を作成する。そのため `DATABASE_URL` には**データベースを作成・削除できる権限を持つユーザー**を指定する必要がある。アプリ用の一般ユーザーのままだと、これら 128 件が `Access denied ... to database '_sqlx_test_...'` で失敗する。
+> 212 件のうち 128 件は `#[sqlx::test]` による DB 結合テストで、テストごとに使い捨てのデータベース（`_sqlx_test_*`）を作成する。devcontainer を使う場合は `postCreateCommand` が必要な権限を自動で付与するため、`cargo test` をそのまま実行できる。devcontainer を使わず自前で DB を用意する場合は、`DATABASE_URL` のユーザーに `_sqlx_test_*` という名前のデータベースを作成・削除できる権限が必要となる。
 >
-> ```bash
-> DATABASE_URL="mysql://root:<MYSQL_ROOT_PASSWORD>@db:3306/stamprally" cargo test
-> ```
+> この変更より前から同じ devcontainer を使い続けている場合は、MySQL クライアントと `postCreateCommand` の変更を反映するためにコンテナをリビルドすること。
 
 LINE Bot 部分を実際に動かすには、LINE 公式アカウント（Messaging API チャネル）と LIFF アプリの登録、および公開 URL が必要になる。チャネル発行から Koyeb へのデプロイまでの手順は [docs/deployment.md](docs/deployment.md) にまとめている。
 
