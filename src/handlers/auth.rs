@@ -334,4 +334,29 @@ mod tests {
         assert_eq!(client_ip(&headers), "203.0.113.1");
     }
 
+    #[test]
+    fn retry_after_rounds_up_fractional_seconds() {
+        for (remaining, expected) in [
+            (chrono::Duration::seconds(900), 900),
+            (chrono::Duration::milliseconds(899_001), 900),
+            (chrono::Duration::seconds(1), 1),
+            (chrono::Duration::nanoseconds(1), 1),
+        ] {
+            assert_eq!(retry_after_seconds(remaining), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn database_errors_do_not_record_password_failures() {
+        let pool = sqlx::mysql::MySqlPoolOptions::new()
+            .connect_lazy("mysql://user:password@localhost/database").unwrap();
+        pool.close().await;
+        let state = crate::AppState::new(pool, "secret", "token", "https://example.test", "liff", "channel", None);
+        let mut client = LoginClient::with_state(state.clone()).await;
+        for _ in 0..6 {
+            assert_eq!(client.post("203.0.113.1", "anything", true).await.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        }
+        assert!(state.login_attempts.lock().unwrap().is_empty());
+    }
+
 }
