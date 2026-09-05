@@ -1,4 +1,4 @@
-# 運営マニュアル — StampRallyBot（仮称）
+# 運営マニュアル — StampRallyBot
 
 このマニュアルは、StampRallyBotを使ってスタンプラリーを運営する「管理者」向けのガイドです。
 

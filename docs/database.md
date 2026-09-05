@@ -1,4 +1,4 @@
-# データベース設計 — StampRallyBot（仮称）
+# データベース設計 — StampRallyBot
 
 DBアクセス: sqlx（生SQL方式）
 DB: MySQL 8.0（ローカル） / TiDB Serverless（本番）

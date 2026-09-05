@@ -1,4 +1,4 @@
-# API エンドポイント設計 — StampRallyBot（仮称）
+# API エンドポイント設計 — StampRallyBot
 
 認証方式: Cookieベースのセッション（管理者ログインのみ。プレイヤーはLINEアカウントで識別しWebログイン不要）
 

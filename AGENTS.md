@@ -1,4 +1,4 @@
-# AGENTS.md — StampRallyBot（仮称）Codex ガイド
+# AGENTS.md — StampRallyBot Codex ガイド
 
 ## Codexの役割定義
 

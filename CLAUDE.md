@@ -1,4 +1,4 @@
-# CLAUDE.md — StampRallyBot（仮称）開発ガイド
+# CLAUDE.md — StampRallyBot 開発ガイド
 
 ## Claudeの役割定義
 

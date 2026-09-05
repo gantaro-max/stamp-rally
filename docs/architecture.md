@@ -1,4 +1,4 @@
-# アーキテクチャ設計 — StampRallyBot（仮称）
+# アーキテクチャ設計 — StampRallyBot
 
 ## 1. 技術スタック
 

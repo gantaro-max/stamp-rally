@@ -1,4 +1,4 @@
-# セキュリティポリシー — StampRallyBot（仮称）
+# セキュリティポリシー — StampRallyBot
 
 このドキュメントは実装・運用上のセキュリティ方針をまとめたもの。実装レベルの詳細ルールは [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md)、非機能要件は [docs/requirements.md](docs/requirements.md) を参照。
 

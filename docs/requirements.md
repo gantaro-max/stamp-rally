@@ -1,4 +1,4 @@
-# 要件定義 — StampRallyBot（仮称）
+# 要件定義 — StampRallyBot
 
 ## 1. 概要
 
