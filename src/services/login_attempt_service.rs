@@ -27,7 +27,9 @@ pub fn record_success(records: &mut HashMap<String, AttemptRecord>, key: &str) {
 }
 
 pub fn cleanup(records: &mut HashMap<String, AttemptRecord>, now: DateTime<Utc>) {
-    records.retain(|_, record| now - record.last_failure < chrono::Duration::minutes(BLOCK_DURATION_MINUTES));
+    records.retain(|_, record| {
+        now - record.last_failure < chrono::Duration::minutes(BLOCK_DURATION_MINUTES)
+    });
 }
 
 pub fn blocked_for(
@@ -66,11 +68,21 @@ mod tests {
     fn case03_four_failures_are_not_blocked() {
         let mut records = HashMap::new();
         for seconds in 0..4 {
-            record_failure(&mut records, "a", now() + chrono::Duration::seconds(seconds));
+            record_failure(
+                &mut records,
+                "a",
+                now() + chrono::Duration::seconds(seconds),
+            );
         }
         assert_eq!(records["a"].failures, 4);
-        assert_eq!(records["a"].last_failure, now() + chrono::Duration::seconds(3));
-        assert_eq!(blocked_for(&records, "a", now() + chrono::Duration::seconds(3)), None);
+        assert_eq!(
+            records["a"].last_failure,
+            now() + chrono::Duration::seconds(3)
+        );
+        assert_eq!(
+            blocked_for(&records, "a", now() + chrono::Duration::seconds(3)),
+            None
+        );
     }
 
     fn five_failures() -> HashMap<String, AttemptRecord> {
@@ -83,26 +95,49 @@ mod tests {
 
     #[test]
     fn case04_five_failures_block_login() {
-        assert_eq!(blocked_for(&five_failures(), "a", now()), Some(chrono::Duration::minutes(15)));
+        assert_eq!(
+            blocked_for(&five_failures(), "a", now()),
+            Some(chrono::Duration::minutes(15))
+        );
     }
 
     #[test]
     fn case05_still_blocked_after_fourteen_minutes_fifty_nine_seconds() {
-        assert_eq!(blocked_for(&five_failures(), "a", now() + chrono::Duration::seconds(899)), Some(chrono::Duration::seconds(1)));
+        assert_eq!(
+            blocked_for(
+                &five_failures(),
+                "a",
+                now() + chrono::Duration::seconds(899)
+            ),
+            Some(chrono::Duration::seconds(1))
+        );
     }
 
     #[test]
     fn case06_block_expires_at_exactly_fifteen_minutes() {
-        assert_eq!(blocked_for(&five_failures(), "a", now() + chrono::Duration::minutes(15)), None);
+        assert_eq!(
+            blocked_for(&five_failures(), "a", now() + chrono::Duration::minutes(15)),
+            None
+        );
     }
 
     #[test]
     fn case07_remaining_time_tracks_elapsed_time() {
         let records = five_failures();
         for (elapsed, remaining) in [(1, 899), (123, 777), (450, 450)] {
-            assert_eq!(blocked_for(&records, "a", now() + chrono::Duration::seconds(elapsed)), Some(chrono::Duration::seconds(remaining)));
+            assert_eq!(
+                blocked_for(&records, "a", now() + chrono::Duration::seconds(elapsed)),
+                Some(chrono::Duration::seconds(remaining))
+            );
         }
-        assert_eq!(blocked_for(&records, "a", now() + chrono::Duration::milliseconds(899_500)), Some(chrono::Duration::milliseconds(500)));
+        assert_eq!(
+            blocked_for(
+                &records,
+                "a",
+                now() + chrono::Duration::milliseconds(899_500)
+            ),
+            Some(chrono::Duration::milliseconds(500))
+        );
     }
 
     #[test]
@@ -149,5 +184,4 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert!(records.contains_key("fresh"));
     }
-
 }

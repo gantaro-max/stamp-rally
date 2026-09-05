@@ -8,7 +8,10 @@ use axum::{
 use serde::Deserialize;
 use tower_sessions::Session;
 
-use crate::{AppState, services::{auth_service, csrf_service, login_attempt_service}};
+use crate::{
+    AppState,
+    services::{auth_service, csrf_service, login_attempt_service},
+};
 
 #[derive(Template)]
 #[template(path = "auth/login.html")]
@@ -34,8 +37,10 @@ fn retry_after_seconds(remaining: chrono::Duration) -> i64 {
 }
 
 fn client_ip(headers: &HeaderMap) -> &str {
-    headers.get_all("x-forwarded-for")
-        .iter().rev()
+    headers
+        .get_all("x-forwarded-for")
+        .iter()
+        .rev()
         .filter_map(|value| value.to_str().ok())
         .flat_map(|value| value.rsplit(','))
         .map(str::trim)
@@ -68,10 +73,19 @@ pub async fn login(
         login_attempt_service::blocked_for(&records, key, now)
     };
     if let Some(remaining) = blocked {
-        let mut response = render_login(session, Some("試行回数の上限に達しました。しばらく待ってから再度お試しください")).await;
+        let mut response = render_login(
+            session,
+            Some("試行回数の上限に達しました。しばらく待ってから再度お試しください"),
+        )
+        .await;
         *response.status_mut() = StatusCode::TOO_MANY_REQUESTS;
-        response.headers_mut().insert(header::RETRY_AFTER,
-            retry_after_seconds(remaining).to_string().parse().expect("integer is a valid header value"));
+        response.headers_mut().insert(
+            header::RETRY_AFTER,
+            retry_after_seconds(remaining)
+                .to_string()
+                .parse()
+                .expect("integer is a valid header value"),
+        );
         return response;
     }
 
@@ -156,12 +170,18 @@ mod tests {
     }
     #[test]
     fn case13_uses_rightmost_forwarded_ip() {
-        assert_eq!(client_ip(&forwarded_for("198.51.100.9, 203.0.113.1")), "203.0.113.1");
+        assert_eq!(
+            client_ip(&forwarded_for("198.51.100.9, 203.0.113.1")),
+            "203.0.113.1"
+        );
     }
 
     #[test]
     fn case14_trims_forwarded_ip_whitespace() {
-        assert_eq!(client_ip(&forwarded_for("198.51.100.9 , 203.0.113.1 ")), "203.0.113.1");
+        assert_eq!(
+            client_ip(&forwarded_for("198.51.100.9 , 203.0.113.1 ")),
+            "203.0.113.1"
+        );
     }
 
     #[test]
@@ -174,9 +194,15 @@ mod tests {
         for value in ["", ",", " , , ", "   "] {
             assert_eq!(client_ip(&forwarded_for(value)), "unknown");
         }
-        assert_eq!(client_ip(&forwarded_for("198.51.100.9, 203.0.113.1, , ")), "203.0.113.1");
+        assert_eq!(
+            client_ip(&forwarded_for("198.51.100.9, 203.0.113.1, , ")),
+            "203.0.113.1"
+        );
         let mut headers = HeaderMap::new();
-        headers.insert("x-forwarded-for", axum::http::HeaderValue::from_bytes(&[0xff]).unwrap());
+        headers.insert(
+            "x-forwarded-for",
+            axum::http::HeaderValue::from_bytes(&[0xff]).unwrap(),
+        );
         assert_eq!(client_ip(&headers), "unknown");
     }
 
@@ -189,8 +215,17 @@ mod tests {
     impl LoginClient {
         async fn new(pool: MySqlPool) -> Self {
             auth_service::seed_admin_event_if_empty(&pool, "admin-secret", "Stamp Rally")
-                .await.unwrap();
-            let state = crate::AppState::new(pool, "secret", "token", "https://example.test", "liff", "channel", None);
+                .await
+                .unwrap();
+            let state = crate::AppState::new(
+                pool,
+                "secret",
+                "token",
+                "https://example.test",
+                "liff",
+                "channel",
+                None,
+            );
             Self::with_state(state).await
         }
 
@@ -199,31 +234,78 @@ mod tests {
             let app = axum::Router::new()
                 .route("/auth/login", axum::routing::get(login_form).post(login))
                 .with_state(state)
-                .layer(tower_sessions::SessionManagerLayer::new(tower_sessions::MemoryStore::default()));
-            let response = app.clone().oneshot(axum::http::Request::builder()
-                .uri("/auth/login").body(axum::body::Body::empty()).unwrap()).await.unwrap();
+                .layer(tower_sessions::SessionManagerLayer::new(
+                    tower_sessions::MemoryStore::default(),
+                ));
+            let response = app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .uri("/auth/login")
+                        .body(axum::body::Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
             assert_eq!(response.status(), StatusCode::OK);
-            let cookie = response.headers()[header::SET_COOKIE].to_str().unwrap()
-                .split(';').next().unwrap().to_owned();
-            let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+            let cookie = response.headers()[header::SET_COOKIE]
+                .to_str()
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap()
+                .to_owned();
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
             let body = String::from_utf8(body.to_vec()).unwrap();
-            let csrf_token = body.split("name=\"csrf_token\" value=\"").nth(1).unwrap()
-                .split('"').next().unwrap().to_owned();
-            Self { app, cookie, csrf_token }
+            let csrf_token = body
+                .split("name=\"csrf_token\" value=\"")
+                .nth(1)
+                .unwrap()
+                .split('"')
+                .next()
+                .unwrap()
+                .to_owned();
+            Self {
+                app,
+                cookie,
+                csrf_token,
+            }
         }
 
         async fn post(&mut self, ip: &str, password: &str, valid_csrf: bool) -> Response {
             use tower::ServiceExt;
-            let csrf = if valid_csrf { &self.csrf_token } else { "invalid-token" };
-            let response = self.app.clone().oneshot(axum::http::Request::builder()
-                .method("POST").uri("/auth/login")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, &self.cookie)
-                .header("x-forwarded-for", ip)
-                .body(axum::body::Body::from(format!("password={password}&csrf_token={csrf}")))
-                .unwrap()).await.unwrap();
+            let csrf = if valid_csrf {
+                &self.csrf_token
+            } else {
+                "invalid-token"
+            };
+            let response = self
+                .app
+                .clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri("/auth/login")
+                        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                        .header(header::COOKIE, &self.cookie)
+                        .header("x-forwarded-for", ip)
+                        .body(axum::body::Body::from(format!(
+                            "password={password}&csrf_token={csrf}"
+                        )))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
             if let Some(cookie) = response.headers().get(header::SET_COOKIE) {
-                self.cookie = cookie.to_str().unwrap().split(';').next().unwrap().to_owned();
+                self.cookie = cookie
+                    .to_str()
+                    .unwrap()
+                    .split(';')
+                    .next()
+                    .unwrap()
+                    .to_owned();
             }
             response
         }
@@ -232,8 +314,14 @@ mod tests {
             for _ in 0..count {
                 let response = self.post(ip, "wrong-password", true).await;
                 assert_eq!(response.status(), StatusCode::OK);
-                let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
-                assert!(String::from_utf8(body.to_vec()).unwrap().contains("パスワードが正しくありません"));
+                let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .unwrap();
+                assert!(
+                    String::from_utf8(body.to_vec())
+                        .unwrap()
+                        .contains("パスワードが正しくありません")
+                );
             }
         }
     }
@@ -255,7 +343,9 @@ mod tests {
         client.fail("203.0.113.1", 5).await;
         let response = client.post("203.0.113.1", "admin-secret", true).await;
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let body = String::from_utf8(body.to_vec()).unwrap();
         assert!(body.contains("試行回数の上限に達しました"));
         assert!(body.contains("name=\"csrf_token\""));
@@ -267,9 +357,14 @@ mod tests {
         client.fail("203.0.113.1", 5).await;
         let response = client.post("203.0.113.1", "admin-secret", true).await;
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-        let seconds: u64 = response.headers().get(header::RETRY_AFTER)
+        let seconds: u64 = response
+            .headers()
+            .get(header::RETRY_AFTER)
             .expect("blocked responses must include Retry-After")
-            .to_str().unwrap().parse().unwrap();
+            .to_str()
+            .unwrap()
+            .parse()
+            .unwrap();
         assert!((1..=900).contains(&seconds));
     }
 
@@ -277,49 +372,116 @@ mod tests {
     async fn case20_another_sender_can_login_while_one_is_blocked(pool: MySqlPool) {
         let mut client = LoginClient::new(pool).await;
         client.fail("198.51.100.9, 203.0.113.1", 5).await;
-        assert_eq!(client.post("192.0.2.99, 203.0.113.1", "admin-secret", true).await.status(), StatusCode::TOO_MANY_REQUESTS);
-        assert_eq!(client.post("203.0.113.2", "admin-secret", true).await.status(), StatusCode::FOUND);
-        assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            client
+                .post("192.0.2.99, 203.0.113.1", "admin-secret", true)
+                .await
+                .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
+            client
+                .post("203.0.113.2", "admin-secret", true)
+                .await
+                .status(),
+            StatusCode::FOUND
+        );
+        assert_eq!(
+            client
+                .post("203.0.113.1", "admin-secret", true)
+                .await
+                .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
     }
 
     #[sqlx::test]
     async fn case21_invalid_csrf_does_not_count_as_login_failure(pool: MySqlPool) {
         let mut client = LoginClient::new(pool).await;
         for _ in 0..5 {
-            assert_eq!(client.post("203.0.113.1", "wrong-password", false).await.status(), StatusCode::FORBIDDEN);
+            assert_eq!(
+                client
+                    .post("203.0.113.1", "wrong-password", false)
+                    .await
+                    .status(),
+                StatusCode::FORBIDDEN
+            );
         }
-        assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::FOUND);
+        assert_eq!(
+            client
+                .post("203.0.113.1", "admin-secret", true)
+                .await
+                .status(),
+            StatusCode::FOUND
+        );
     }
 
     #[sqlx::test]
     async fn case22_success_resets_subsequent_failure_count(pool: MySqlPool) {
         let mut client = LoginClient::new(pool).await;
         client.fail("203.0.113.1", 4).await;
-        assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::FOUND);
+        assert_eq!(
+            client
+                .post("203.0.113.1", "admin-secret", true)
+                .await
+                .status(),
+            StatusCode::FOUND
+        );
         client.fail("203.0.113.1", 4).await;
-        assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::FOUND);
+        assert_eq!(
+            client
+                .post("203.0.113.1", "admin-secret", true)
+                .await
+                .status(),
+            StatusCode::FOUND
+        );
         client.fail("203.0.113.1", 5).await;
-        assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            client
+                .post("203.0.113.1", "admin-secret", true)
+                .await
+                .status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
     }
 
     #[tokio::test]
     async fn blocked_login_cleans_expired_records_without_touching_database() {
         let pool = sqlx::mysql::MySqlPoolOptions::new()
-            .connect_lazy("mysql://user:password@localhost/database").unwrap();
+            .connect_lazy("mysql://user:password@localhost/database")
+            .unwrap();
         pool.close().await;
-        let state = crate::AppState::new(pool, "secret", "token", "https://example.test", "liff", "channel", None);
+        let state = crate::AppState::new(
+            pool,
+            "secret",
+            "token",
+            "https://example.test",
+            "liff",
+            "channel",
+            None,
+        );
         let now = chrono::Utc::now();
         {
             let mut records = state.login_attempts.lock().unwrap();
-            login_attempt_service::record_failure(&mut records, "expired", now - chrono::Duration::minutes(15));
+            login_attempt_service::record_failure(
+                &mut records,
+                "expired",
+                now - chrono::Duration::minutes(15),
+            );
             for _ in 0..5 {
                 login_attempt_service::record_failure(&mut records, "203.0.113.1", now);
             }
         }
         let mut client = LoginClient::with_state(state.clone()).await;
-        assert_eq!(client.post("203.0.113.1", "anything", false).await.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            client.post("203.0.113.1", "anything", false).await.status(),
+            StatusCode::FORBIDDEN
+        );
         assert!(state.login_attempts.lock().unwrap().contains_key("expired"));
-        assert_eq!(client.post("203.0.113.1", "anything", true).await.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            client.post("203.0.113.1", "anything", true).await.status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
         let records = state.login_attempts.lock().unwrap();
         assert!(!records.contains_key("expired"));
         assert_eq!(records["203.0.113.1"].failures, 5);
@@ -349,14 +511,25 @@ mod tests {
     #[tokio::test]
     async fn database_errors_do_not_record_password_failures() {
         let pool = sqlx::mysql::MySqlPoolOptions::new()
-            .connect_lazy("mysql://user:password@localhost/database").unwrap();
+            .connect_lazy("mysql://user:password@localhost/database")
+            .unwrap();
         pool.close().await;
-        let state = crate::AppState::new(pool, "secret", "token", "https://example.test", "liff", "channel", None);
+        let state = crate::AppState::new(
+            pool,
+            "secret",
+            "token",
+            "https://example.test",
+            "liff",
+            "channel",
+            None,
+        );
         let mut client = LoginClient::with_state(state.clone()).await;
         for _ in 0..6 {
-            assert_eq!(client.post("203.0.113.1", "anything", true).await.status(), StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(
+                client.post("203.0.113.1", "anything", true).await.status(),
+                StatusCode::INTERNAL_SERVER_ERROR
+            );
         }
         assert!(state.login_attempts.lock().unwrap().is_empty());
     }
-
 }
