@@ -231,7 +231,10 @@ mod tests {
     fn atomic_registration_blocks_the_sixth_attempt() {
         let mut records = HashMap::new();
         for _ in 0..MAX_ATTEMPTS {
-            assert_eq!(register_attempt(&mut records, "a", now()), AttemptResult::Accepted);
+            assert_eq!(
+                register_attempt(&mut records, "a", now()),
+                AttemptResult::Accepted
+            );
         }
         assert!(matches!(
             register_attempt(&mut records, "a", now()),
@@ -244,10 +247,16 @@ mod tests {
     fn successful_login_resets_atomic_attempt_registration() {
         let mut records = HashMap::new();
         for _ in 0..4 {
-            assert_eq!(register_attempt(&mut records, "a", now()), AttemptResult::Accepted);
+            assert_eq!(
+                register_attempt(&mut records, "a", now()),
+                AttemptResult::Accepted
+            );
         }
         record_success(&mut records, "a");
-        assert_eq!(register_attempt(&mut records, "a", now()), AttemptResult::Accepted);
+        assert_eq!(
+            register_attempt(&mut records, "a", now()),
+            AttemptResult::Accepted
+        );
         assert_eq!(records["a"].failures, 1);
     }
 

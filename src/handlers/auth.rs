@@ -479,9 +479,11 @@ mod tests {
             six.unwrap(),
         ];
 
-        assert!(responses
-            .iter()
-            .any(|response| response.status() == StatusCode::TOO_MANY_REQUESTS));
+        assert!(
+            responses
+                .iter()
+                .any(|response| response.status() == StatusCode::TOO_MANY_REQUESTS)
+        );
         assert!(client.state.login_attempts.lock().unwrap()["203.0.113.1"].failures <= 5);
     }
 
