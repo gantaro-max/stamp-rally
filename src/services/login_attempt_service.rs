@@ -112,4 +112,14 @@ mod tests {
         }
     }
 
+    #[test]
+    fn case09_success_removes_failure_history() {
+        let mut records = five_failures();
+        record_success(&mut records, "a");
+        assert!(!records.contains_key("a"));
+        record_failure(&mut records, "a", now());
+        assert_eq!(records["a"].failures, 1);
+        assert_eq!(blocked_for(&records, "a", now()), None);
+    }
+
 }
