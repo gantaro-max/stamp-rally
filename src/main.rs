@@ -20,7 +20,8 @@ use std::{
 use time::Duration;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
 
-pub type LoginAttemptStore = Arc<Mutex<HashMap<String, services::login_attempt_service::AttemptRecord>>>;
+pub type LoginAttemptStore =
+    Arc<Mutex<HashMap<String, services::login_attempt_service::AttemptRecord>>>;
 pub type StampImageCache = Arc<RwLock<HashMap<i32, Arc<image::DynamicImage>>>>;
 
 #[derive(Clone)]

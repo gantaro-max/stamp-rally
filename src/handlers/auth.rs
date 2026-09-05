@@ -8,7 +8,10 @@ use axum::{
 use serde::Deserialize;
 use tower_sessions::Session;
 
-use crate::{AppState, services::{auth_service, csrf_service, login_attempt_service}};
+use crate::{
+    AppState,
+    services::{auth_service, csrf_service, login_attempt_service},
+};
 
 #[derive(Template)]
 #[template(path = "auth/login.html")]
@@ -33,7 +36,10 @@ pub async fn login_form(session: Session) -> Response {
 }
 
 fn client_ip(headers: &HeaderMap) -> &str {
-    headers.get_all("x-forwarded-for").iter().next_back()
+    headers
+        .get_all("x-forwarded-for")
+        .iter()
+        .next_back()
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.rsplit(',').map(str::trim).find(|ip| !ip.is_empty()))
         .unwrap_or("unknown")
@@ -65,9 +71,16 @@ pub async fn login(
         login_attempt_service::register_attempt(&mut records, key, now)
     };
     if let login_attempt_service::AttemptResult::Blocked(remaining) = attempt {
-        let mut response = render_login(session, Some("試行回数の上限に達しました。しばらく待ってから再度お試しください")).await;
+        let mut response = render_login(
+            session,
+            Some("試行回数の上限に達しました。しばらく待ってから再度お試しください"),
+        )
+        .await;
         *response.status_mut() = StatusCode::TOO_MANY_REQUESTS;
-        response.headers_mut().insert(header::RETRY_AFTER, retry_after_seconds(remaining).to_string().parse().unwrap());
+        response.headers_mut().insert(
+            header::RETRY_AFTER,
+            retry_after_seconds(remaining).to_string().parse().unwrap(),
+        );
         return response;
     }
 
@@ -75,7 +88,9 @@ pub async fn login(
         Ok(true) => {
             if let Ok(mut records) = state.login_attempts.lock() {
                 login_attempt_service::record_success(&mut records, key);
-            } else { return StatusCode::INTERNAL_SERVER_ERROR.into_response(); }
+            } else {
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
             if session.insert("admin_authenticated", true).await.is_err() {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
@@ -124,40 +139,91 @@ fn redirect_to(location: &'static str) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{Router, body::{Body, to_bytes}, http::Request};
+    use axum::{
+        Router,
+        body::{Body, to_bytes},
+        http::Request,
+    };
     use sqlx::MySqlPool;
     use tower::ServiceExt;
 
     async fn login_client(pool: MySqlPool) -> (Router, String, String) {
-        crate::services::auth_service::seed_admin_event_if_empty(&pool, "admin-secret", "Stamp Rally")
+        crate::services::auth_service::seed_admin_event_if_empty(
+            &pool,
+            "admin-secret",
+            "Stamp Rally",
+        )
+        .await
+        .unwrap();
+        let app = crate::app_router(pool);
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/auth/login")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
-        let app = crate::app_router(pool);
-        let response = app.clone().oneshot(Request::builder().uri("/auth/login").body(Body::empty()).unwrap()).await.unwrap();
-        let cookie = response.headers()[header::SET_COOKIE].to_str().unwrap().split(';').next().unwrap().to_owned();
-        let body = String::from_utf8(to_bytes(response.into_body(), usize::MAX).await.unwrap().to_vec()).unwrap();
-        let csrf = body.split("name=\"csrf_token\" value=\"").nth(1).unwrap().split('"').next().unwrap().to_owned();
+        let cookie = response.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        let body = String::from_utf8(
+            to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        let csrf = body
+            .split("name=\"csrf_token\" value=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .to_owned();
         (app, cookie, csrf)
     }
 
     #[sqlx::test]
     async fn case29_concurrent_attempts_are_rate_limited(pool: MySqlPool) {
         let (app, cookie, csrf) = login_client(pool).await;
-        let request = || Request::builder()
-            .method("POST")
-            .uri("/auth/login")
-            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-            .header(header::COOKIE, &cookie)
-            .header("x-forwarded-for", "203.0.113.1")
-            .body(Body::from(format!("password=wrong&csrf_token={csrf}")))
-            .unwrap();
+        let request = || {
+            Request::builder()
+                .method("POST")
+                .uri("/auth/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, &cookie)
+                .header("x-forwarded-for", "203.0.113.1")
+                .body(Body::from(format!("password=wrong&csrf_token={csrf}")))
+                .unwrap()
+        };
         let (a, b, c, d, e, f) = tokio::join!(
-            app.clone().oneshot(request()), app.clone().oneshot(request()),
-            app.clone().oneshot(request()), app.clone().oneshot(request()),
-            app.clone().oneshot(request()), app.clone().oneshot(request()),
+            app.clone().oneshot(request()),
+            app.clone().oneshot(request()),
+            app.clone().oneshot(request()),
+            app.clone().oneshot(request()),
+            app.clone().oneshot(request()),
+            app.clone().oneshot(request()),
         );
-        assert!([a.unwrap(), b.unwrap(), c.unwrap(), d.unwrap(), e.unwrap(), f.unwrap()]
-            .iter().any(|response| response.status() == StatusCode::TOO_MANY_REQUESTS));
+        assert!(
+            [
+                a.unwrap(),
+                b.unwrap(),
+                c.unwrap(),
+                d.unwrap(),
+                e.unwrap(),
+                f.unwrap()
+            ]
+            .iter()
+            .any(|response| response.status() == StatusCode::TOO_MANY_REQUESTS)
+        );
     }
 
     fn forwarded_for(value: &str) -> HeaderMap {
@@ -169,10 +235,18 @@ mod tests {
     #[test]
     fn cases13_to_17_extract_or_default_the_forwarded_ip() {
         assert_eq!(client_ip(&forwarded_for("203.0.113.1")), "203.0.113.1");
-        assert_eq!(client_ip(&forwarded_for("198.51.100.9, 203.0.113.1")), "203.0.113.1");
-        assert_eq!(client_ip(&forwarded_for("198.51.100.9 , 203.0.113.1 ")), "203.0.113.1");
+        assert_eq!(
+            client_ip(&forwarded_for("198.51.100.9, 203.0.113.1")),
+            "203.0.113.1"
+        );
+        assert_eq!(
+            client_ip(&forwarded_for("198.51.100.9 , 203.0.113.1 ")),
+            "203.0.113.1"
+        );
         assert_eq!(client_ip(&HeaderMap::new()), "unknown");
-        for value in ["", ",", " , "] { assert_eq!(client_ip(&forwarded_for(value)), "unknown"); }
+        for value in ["", ",", " , "] {
+            assert_eq!(client_ip(&forwarded_for(value)), "unknown");
+        }
     }
 
     #[test]
@@ -180,7 +254,10 @@ mod tests {
         let mut headers = forwarded_for("198.51.100.9");
         headers.append("x-forwarded-for", "192.0.2.9, 203.0.113.1".parse().unwrap());
         assert_eq!(client_ip(&headers), "203.0.113.1");
-        headers.append("x-forwarded-for", axum::http::HeaderValue::from_bytes(&[0xff]).unwrap());
+        headers.append(
+            "x-forwarded-for",
+            axum::http::HeaderValue::from_bytes(&[0xff]).unwrap(),
+        );
         assert_eq!(client_ip(&headers), "unknown");
         let mut headers = forwarded_for("198.51.100.9");
         headers.append("x-forwarded-for", " , ".parse().unwrap());
