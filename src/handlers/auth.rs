@@ -34,9 +34,12 @@ fn retry_after_seconds(remaining: chrono::Duration) -> i64 {
 }
 
 fn client_ip(headers: &HeaderMap) -> &str {
-    headers.get("x-forwarded-for")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.rsplit(',').map(str::trim).find(|ip| !ip.is_empty()))
+    headers.get_all("x-forwarded-for")
+        .iter().rev()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.rsplit(','))
+        .map(str::trim)
+        .find(|ip| !ip.is_empty())
         .unwrap_or("unknown")
 }
 
