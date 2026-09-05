@@ -19,7 +19,7 @@
 | メソッド | パス | 説明 | 認証 |
 |:--|:--|:--|:--|
 | GET | `/auth/login` | ログイン画面 | 不要 |
-| POST | `/auth/login` | ログイン処理 | 不要 |
+| POST | `/auth/login` | ログイン処理。同一送信元からの失敗が5回に達すると15分間 `429 Too Many Requests`（`Retry-After` 付き）を返す（[architecture.md 25節](architecture.md#25-管理者ログインのレート制限post-authlogin)） | 不要 |
 | POST | `/auth/logout` | ログアウト（POSTのみ） | 必要 |
 
 ---
