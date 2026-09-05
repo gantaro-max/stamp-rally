@@ -279,4 +279,15 @@ mod tests {
         assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::FOUND);
     }
 
+    #[sqlx::test]
+    async fn case22_success_resets_subsequent_failure_count(pool: MySqlPool) {
+        let mut client = LoginClient::new(pool).await;
+        client.fail("203.0.113.1", 4).await;
+        assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::FOUND);
+        client.fail("203.0.113.1", 4).await;
+        assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::FOUND);
+        client.fail("203.0.113.1", 5).await;
+        assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
 }
