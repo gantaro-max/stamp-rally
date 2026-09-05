@@ -6,10 +6,9 @@ use axum::{
     response::{Html, IntoResponse, Response},
 };
 use serde::Deserialize;
-use sqlx::MySqlPool;
 use tower_sessions::Session;
 
-use crate::services::{auth_service, csrf_service};
+use crate::{AppState, services::{auth_service, csrf_service, login_attempt_service}};
 
 #[derive(Template)]
 #[template(path = "auth/login.html")]
@@ -41,15 +40,30 @@ pub async fn login_form(session: Session) -> Response {
 }
 
 pub async fn login(
-    State(pool): State<MySqlPool>,
+    State(state): State<AppState>,
     session: Session,
+    headers: HeaderMap,
     Form(form): Form<LoginForm>,
 ) -> Response {
     if !csrf_service::verify_token(&session, form.csrf_token.as_deref().unwrap_or("")).await {
         return StatusCode::FORBIDDEN.into_response();
     }
 
-    match auth_service::try_login(&pool, &form.password).await {
+    let key = client_ip(&headers);
+    let blocked = {
+        let records = match state.login_attempts.lock() {
+            Ok(records) => records,
+            Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        };
+        login_attempt_service::blocked_for(&records, key, chrono::Utc::now())
+    };
+    if blocked.is_some() {
+        let mut response = render_login(session, Some("試行回数の上限に達しました。しばらく待ってから再度お試しください")).await;
+        *response.status_mut() = StatusCode::TOO_MANY_REQUESTS;
+        return response;
+    }
+
+    match auth_service::try_login(&state.pool, &form.password).await {
         Ok(true) => {
             if session.insert("admin_authenticated", true).await.is_err() {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -59,7 +73,16 @@ pub async fn login(
             }
             redirect_to("/admin/dashboard")
         }
-        Ok(false) => render_login(session, Some("パスワードが正しくありません")).await,
+        Ok(false) => {
+            {
+                let mut records = match state.login_attempts.lock() {
+                    Ok(records) => records,
+                    Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                };
+                login_attempt_service::record_failure(&mut records, key, chrono::Utc::now());
+            }
+            render_login(session, Some("パスワードが正しくありません")).await
+        }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -100,6 +123,7 @@ fn redirect_to(location: &'static str) -> Response {
 mod tests {
     use super::*;
     use axum::http::HeaderMap;
+    use sqlx::MySqlPool;
 
     fn forwarded_for(value: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
