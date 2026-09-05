@@ -1,3 +1,17 @@
+use std::collections::HashMap;
+
+use chrono::{DateTime, Utc};
+
+pub struct AttemptRecord;
+
+pub fn blocked_for(
+    _records: &HashMap<String, AttemptRecord>,
+    _key: &str,
+    _now: DateTime<Utc>,
+) -> Option<chrono::Duration> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
