@@ -118,4 +118,9 @@ mod tests {
         assert_eq!(client_ip(&forwarded_for("198.51.100.9 , 203.0.113.1 ")), "203.0.113.1");
     }
 
+    #[test]
+    fn case15_missing_forwarded_header_uses_unknown() {
+        assert_eq!(client_ip(&HeaderMap::new()), "unknown");
+    }
+
 }
