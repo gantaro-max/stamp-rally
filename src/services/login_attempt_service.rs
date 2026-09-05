@@ -25,7 +25,8 @@ pub fn blocked_for(
     now: DateTime<Utc>,
 ) -> Option<chrono::Duration> {
     let record = records.get(key)?;
-    (record.failures >= MAX_FAILURES).then_some(record.last_failure + chrono::Duration::minutes(BLOCK_DURATION_MINUTES) - now)
+    let remaining = record.last_failure + chrono::Duration::minutes(BLOCK_DURATION_MINUTES) - now;
+    (record.failures >= MAX_FAILURES && remaining > chrono::Duration::zero()).then_some(remaining)
 }
 
 #[cfg(test)]
