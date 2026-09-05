@@ -72,6 +72,13 @@ pub async fn login(
 
     match auth_service::try_login(&state.pool, &form.password).await {
         Ok(true) => {
+            {
+                let mut records = match state.login_attempts.lock() {
+                    Ok(records) => records,
+                    Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                };
+                login_attempt_service::record_success(&mut records, key);
+            }
             if session.insert("admin_authenticated", true).await.is_err() {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
