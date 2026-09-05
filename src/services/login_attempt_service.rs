@@ -2,7 +2,14 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 
-pub struct AttemptRecord;
+pub struct AttemptRecord {
+    pub failures: u32,
+    pub last_failure: DateTime<Utc>,
+}
+
+pub fn record_failure(records: &mut HashMap<String, AttemptRecord>, key: &str, now: DateTime<Utc>) {
+    records.insert(key.to_owned(), AttemptRecord { failures: 1, last_failure: now });
+}
 
 pub fn blocked_for(
     _records: &HashMap<String, AttemptRecord>,
