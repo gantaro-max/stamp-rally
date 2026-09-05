@@ -2,6 +2,9 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
 
+pub const MAX_FAILURES: u32 = 5;
+pub const BLOCK_DURATION_MINUTES: i64 = 15;
+
 pub struct AttemptRecord {
     pub failures: u32,
     pub last_failure: DateTime<Utc>,
@@ -17,11 +20,12 @@ pub fn record_failure(records: &mut HashMap<String, AttemptRecord>, key: &str, n
 }
 
 pub fn blocked_for(
-    _records: &HashMap<String, AttemptRecord>,
-    _key: &str,
+    records: &HashMap<String, AttemptRecord>,
+    key: &str,
     _now: DateTime<Utc>,
 ) -> Option<chrono::Duration> {
-    None
+    let record = records.get(key)?;
+    (record.failures >= MAX_FAILURES).then_some(chrono::Duration::minutes(BLOCK_DURATION_MINUTES))
 }
 
 #[cfg(test)]
