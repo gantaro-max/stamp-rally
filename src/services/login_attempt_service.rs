@@ -94,4 +94,19 @@ mod tests {
         assert_eq!(blocked_for(&records, "a", now() + chrono::Duration::milliseconds(899_500)), Some(chrono::Duration::milliseconds(500)));
     }
 
+    #[test]
+    fn case08_expired_failures_restart_at_one() {
+        for minutes in [15, 16] {
+            let mut records = HashMap::new();
+            for _ in 0..4 {
+                record_failure(&mut records, "a", now());
+            }
+            let later = now() + chrono::Duration::minutes(minutes);
+            record_failure(&mut records, "a", later);
+            assert_eq!(records["a"].failures, 1);
+            assert_eq!(records["a"].last_failure, later);
+            assert_eq!(blocked_for(&records, "a", later), None);
+        }
+    }
+
 }
