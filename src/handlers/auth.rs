@@ -242,4 +242,16 @@ mod tests {
         assert!(body.contains("name=\"csrf_token\""));
     }
 
+    #[sqlx::test]
+    async fn case19_blocked_response_has_retry_after(pool: MySqlPool) {
+        let mut client = LoginClient::new(pool).await;
+        client.fail("203.0.113.1", 5).await;
+        let response = client.post("203.0.113.1", "admin-secret", true).await;
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let seconds: u64 = response.headers().get(header::RETRY_AFTER)
+            .expect("blocked responses must include Retry-After")
+            .to_str().unwrap().parse().unwrap();
+        assert!((1..=900).contains(&seconds));
+    }
+
 }
