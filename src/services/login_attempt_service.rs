@@ -15,6 +15,9 @@ pub fn record_failure(records: &mut HashMap<String, AttemptRecord>, key: &str, n
         failures: 0,
         last_failure: now,
     });
+    if now - record.last_failure >= chrono::Duration::minutes(BLOCK_DURATION_MINUTES) {
+        record.failures = 0;
+    }
     record.failures += 1;
     record.last_failure = now;
 }
