@@ -8,7 +8,12 @@ pub struct AttemptRecord {
 }
 
 pub fn record_failure(records: &mut HashMap<String, AttemptRecord>, key: &str, now: DateTime<Utc>) {
-    records.insert(key.to_owned(), AttemptRecord { failures: 1, last_failure: now });
+    let record = records.entry(key.to_owned()).or_insert(AttemptRecord {
+        failures: 0,
+        last_failure: now,
+    });
+    record.failures += 1;
+    record.last_failure = now;
 }
 
 pub fn blocked_for(
