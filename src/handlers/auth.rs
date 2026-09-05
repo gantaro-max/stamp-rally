@@ -206,4 +206,16 @@ mod tests {
         assert_ne!(client.cookie, old_cookie);
     }
 
+    #[sqlx::test]
+    async fn case18_five_failures_reject_even_correct_password(pool: MySqlPool) {
+        let mut client = LoginClient::new(pool).await;
+        client.fail("203.0.113.1", 5).await;
+        let response = client.post("203.0.113.1", "admin-secret", true).await;
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("試行回数の上限に達しました"));
+        assert!(body.contains("name=\"csrf_token\""));
+    }
+
 }
