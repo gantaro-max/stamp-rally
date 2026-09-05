@@ -297,4 +297,28 @@ mod tests {
         assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
+    #[tokio::test]
+    async fn blocked_login_cleans_expired_records_without_touching_database() {
+        let pool = sqlx::mysql::MySqlPoolOptions::new()
+            .connect_lazy("mysql://user:password@localhost/database").unwrap();
+        pool.close().await;
+        let state = crate::AppState::new(pool, "secret", "token", "https://example.test", "liff", "channel", None);
+        let now = chrono::Utc::now();
+        {
+            let mut records = state.login_attempts.lock().unwrap();
+            login_attempt_service::record_failure(&mut records, "expired", now - chrono::Duration::minutes(15));
+            for _ in 0..5 {
+                login_attempt_service::record_failure(&mut records, "203.0.113.1", now);
+            }
+        }
+        let mut client = LoginClient::with_state(state.clone()).await;
+        assert_eq!(client.post("203.0.113.1", "anything", false).await.status(), StatusCode::FORBIDDEN);
+        assert!(state.login_attempts.lock().unwrap().contains_key("expired"));
+        assert_eq!(client.post("203.0.113.1", "anything", true).await.status(), StatusCode::TOO_MANY_REQUESTS);
+        let records = state.login_attempts.lock().unwrap();
+        assert!(!records.contains_key("expired"));
+        assert_eq!(records["203.0.113.1"].failures, 5);
+        assert_eq!(records["203.0.113.1"].last_failure, now);
+    }
+
 }
