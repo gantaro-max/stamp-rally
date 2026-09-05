@@ -270,4 +270,13 @@ mod tests {
         assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
+    #[sqlx::test]
+    async fn case21_invalid_csrf_does_not_count_as_login_failure(pool: MySqlPool) {
+        let mut client = LoginClient::new(pool).await;
+        for _ in 0..5 {
+            assert_eq!(client.post("203.0.113.1", "wrong-password", false).await.status(), StatusCode::FORBIDDEN);
+        }
+        assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::FOUND);
+    }
+
 }
