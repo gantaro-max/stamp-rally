@@ -8,3 +8,4 @@ pub mod qr_service;
 pub mod ranking_service;
 pub mod room_service;
 pub mod stamp_card_service;
+pub mod login_attempt_service;
