@@ -32,8 +32,7 @@ pub struct LogoutForm {
 fn client_ip(headers: &HeaderMap) -> &str {
     headers.get("x-forwarded-for")
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.rsplit(',').next())
-        .map(str::trim)
+        .and_then(|value| value.rsplit(',').map(str::trim).find(|ip| !ip.is_empty()))
         .unwrap_or("unknown")
 }
 
