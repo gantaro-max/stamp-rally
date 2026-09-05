@@ -57,4 +57,17 @@ mod tests {
         assert_eq!(blocked_for(&records, "a", now() + chrono::Duration::seconds(3)), None);
     }
 
+    fn five_failures() -> HashMap<String, AttemptRecord> {
+        let mut records = HashMap::new();
+        for _ in 0..5 {
+            record_failure(&mut records, "a", now());
+        }
+        records
+    }
+
+    #[test]
+    fn case04_five_failures_block_login() {
+        assert_eq!(blocked_for(&five_failures(), "a", now()), Some(chrono::Duration::minutes(15)));
+    }
+
 }
