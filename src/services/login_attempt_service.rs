@@ -22,6 +22,10 @@ pub fn record_failure(records: &mut HashMap<String, AttemptRecord>, key: &str, n
     record.last_failure = now;
 }
 
+pub fn record_success(records: &mut HashMap<String, AttemptRecord>, key: &str) {
+    records.remove(key);
+}
+
 pub fn blocked_for(
     records: &HashMap<String, AttemptRecord>,
     key: &str,
