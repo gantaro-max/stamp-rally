@@ -79,4 +79,9 @@ mod tests {
         assert_eq!(blocked_for(&five_failures(), "a", now() + chrono::Duration::seconds(899)), Some(chrono::Duration::seconds(1)));
     }
 
+    #[test]
+    fn case06_block_expires_at_exactly_fifteen_minutes() {
+        assert_eq!(blocked_for(&five_failures(), "a", now() + chrono::Duration::minutes(15)), None);
+    }
+
 }
