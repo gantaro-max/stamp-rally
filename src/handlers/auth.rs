@@ -30,7 +30,7 @@ pub struct LogoutForm {
 }
 
 fn client_ip(headers: &HeaderMap) -> &str {
-    headers.get("x-forwarded-for").unwrap().to_str().unwrap()
+    headers.get("x-forwarded-for").unwrap().to_str().unwrap().rsplit(',').next().unwrap().trim()
 }
 
 pub async fn login_form(session: Session) -> Response {
