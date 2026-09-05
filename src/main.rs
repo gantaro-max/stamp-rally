@@ -15,11 +15,13 @@ use std::{
     env,
     net::SocketAddr,
     process,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
 };
 use time::Duration;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
 
+pub type LoginAttemptStore =
+    Arc<Mutex<HashMap<String, services::login_attempt_service::AttemptRecord>>>;
 pub type StampImageCache = Arc<RwLock<HashMap<i32, Arc<image::DynamicImage>>>>;
 
 #[derive(Clone)]
@@ -34,6 +36,7 @@ pub struct AppState {
     pub verify_id_tokens: bool,
     pub http_client: reqwest::Client,
     pub stamp_image_cache: StampImageCache,
+    pub login_attempts: LoginAttemptStore,
     pub send_line_replies: bool,
     pub spawn_background_tasks: bool,
 }
@@ -62,6 +65,7 @@ impl AppState {
                 .build()
                 .expect("failed to build reqwest client"),
             stamp_image_cache: Arc::new(RwLock::new(HashMap::new())),
+            login_attempts: Arc::new(Mutex::new(HashMap::new())),
             send_line_replies: true,
             spawn_background_tasks: true,
         }
