@@ -14,7 +14,7 @@ DB: MySQL 8.0（ローカル） / TiDB Serverless（本番）
 | `players` | 参加者（LINEユーザー×イベント） |
 | `visited_rooms` | 訪問済み部屋の記録 |
 | `room_images` | 画像バイナリの汎用ストレージ（UUIDで公開URL生成）。部屋のクエスト画像・スタンプ画像・スタンプカード台紙画像で共有 |
-| `pending_registrations` | LINE Botの参加登録の一時状態（「開始」〜名前入力までの間）。Koyeb無料枠のスケールtoゼロに耐えるためDB永続化する（[architecture.md 9節](architecture.md#9-会話状態管理参加登録の一時状態)） |
+| `pending_registrations` | LINE Botの参加登録の一時状態（「開始」〜名前入力までの間）。無料枠ホスティングのスリープ・再起動に耐えるためDB永続化する（[architecture.md 9節](architecture.md#9-会話状態管理参加登録の一時状態)） |
 
 ---
 

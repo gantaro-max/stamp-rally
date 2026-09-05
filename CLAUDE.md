@@ -147,7 +147,7 @@ LINE Bot を使った建物内スタンプラリーアプリ。1建物・最大1
 | [docs/api.md](docs/api.md) | エンドポイント設計 |
 | [docs/operator-guide.md](docs/operator-guide.md) | 運営マニュアル |
 | [README.md](README.md) | プロジェクト紹介（対外向け）・ローカル起動 |
-| [docs/deployment.md](docs/deployment.md) | LINEチャネル発行・Koyebデプロイ手順 |
+| [docs/deployment.md](docs/deployment.md) | LINEチャネル発行・Renderデプロイ手順 |
 | [AGENTS.md](AGENTS.md) | コーディング規約・Codexの役割 |
 | [SECURITY.md](SECURITY.md) | セキュリティポリシー |
 | [CHANGELOG.md](CHANGELOG.md) | 変更履歴 |
@@ -169,7 +169,7 @@ LINE Bot を使った建物内スタンプラリーアプリ。1建物・最大1
 | 画像処理 | `image` crate |
 | QRコード生成 | `qrcode` crate |
 | ビルド | Cargo |
-| ホスティング | Koyeb（Dockerfileベースのデプロイ。詳細は docs/architecture.md 18節） |
+| ホスティング | Render（Dockerfileベースのデプロイ。詳細は docs/architecture.md 18節） |
 
 ---
 

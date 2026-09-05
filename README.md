@@ -3,7 +3,7 @@
 **LINE Bot で遊ぶ、建物内スタンプラリーアプリ。**
 参加者は LINE から届く指示に従って建物内の部屋を巡り、各部屋のスタッフが提示する QR コードを LIFF でスキャンしてスタンプを集める。全部屋を回るとクリアタイムが記録され、ランキングに載る。
 
-Rust（Axum）製のフルスタック Web アプリケーション。LINE Messaging API・LIFF 連携、管理画面、動的な画像生成までを含み、Koyeb 上で実際に稼働させることを前提に設計・実装した個人プロジェクト。
+Rust（Axum）製のフルスタック Web アプリケーション。LINE Messaging API・LIFF 連携、管理画面、動的な画像生成までを含み、Render 上で実際に稼働させながら設計・実装した個人プロジェクト。
 
 > **このリポジトリの見どころ**
 > 成果物そのものに加えて、**AI エージェントに役割を分担させた TDD 開発プロセス**を丸ごと記録している点にあります。
@@ -88,7 +88,7 @@ Rust（Axum）製のフルスタック Web アプリケーション。LINE Messa
 | 画像処理 | `image` / `imageproc` / `ab_glyph` |
 | QR 生成 | `qrcode` |
 | 開発環境 | Dev Container（Rust + MySQL） |
-| 本番環境 | Koyeb（マルチステージ Dockerfile） |
+| 本番環境 | Render（マルチステージ Dockerfile） |
 
 外部 SDK に頼らず、LINE Messaging API クライアント・Webhook 署名検証・Flex Message の組み立て・LIFF ID トークン検証をすべて自前で実装している。
 
@@ -176,7 +176,7 @@ LINE の署名はリクエストボディの生バイト列に対する HMAC-SHA
 <details>
 <summary><b>無料枠のスケール to ゼロを前提に状態を持つ</b></summary>
 
-Koyeb 無料枠は最小インスタンス数を 0 に固定できず、アイドル時にプロセスが落ちうる。そのため「開始」〜名前入力までの参加登録の一時状態を、プロセス内メモリではなく `pending_registrations` テーブルに永続化し、再起動をまたいでも会話が壊れないようにした。一方でセッションはプロセス内保持のままとし、インスタンス数 1 固定の運用でカバーする（管理者の再ログインで済む範囲のため）。
+無料枠のホスティングでは、アイドル時にプロセスが落ちうる（Render 無料枠は約 15 分アクセスがないとスリープする。移行を検討して実際にデプロイ検証した Koyeb 無料枠も、最小インスタンス数を 0 に固定できずスケール to ゼロする）。そのため「開始」〜名前入力までの参加登録の一時状態を、プロセス内メモリではなく `pending_registrations` テーブルに永続化し、再起動をまたいでも会話が壊れないようにした。一方でセッションはプロセス内保持のままとし、管理者の再ログインで済む範囲として許容している。
 （[architecture.md 9節・18節](docs/architecture.md#9-会話状態管理参加登録の一時状態)）
 </details>
 
@@ -319,7 +319,7 @@ cargo clippy    # Lint
 >
 > この変更より前から同じ devcontainer を使い続けている場合は、MySQL クライアントと `postCreateCommand` の変更を反映するためにコンテナをリビルドすること。
 
-LINE Bot 部分を実際に動かすには、LINE 公式アカウント（Messaging API チャネル）と LIFF アプリの登録、および公開 URL が必要になる。チャネル発行から Koyeb へのデプロイまでの手順は [docs/deployment.md](docs/deployment.md) にまとめている。
+LINE Bot 部分を実際に動かすには、LINE 公式アカウント（Messaging API チャネル）と LIFF アプリの登録、および公開 URL が必要になる。チャネル発行から Render へのデプロイまでの手順は [docs/deployment.md](docs/deployment.md) にまとめている。
 
 ---
 
@@ -332,7 +332,7 @@ LINE Bot 部分を実際に動かすには、LINE 公式アカウント（Messag
 | [docs/database.md](docs/database.md) | テーブル設計 |
 | [docs/api.md](docs/api.md) | エンドポイント設計 |
 | [docs/operator-guide.md](docs/operator-guide.md) | 運営スタッフ向けマニュアル |
-| [docs/deployment.md](docs/deployment.md) | LINE チャネル発行・Koyeb デプロイ手順 |
+| [docs/deployment.md](docs/deployment.md) | LINE チャネル発行・Render デプロイ手順 |
 | [SECURITY.md](SECURITY.md) | セキュリティポリシー |
 | [CHANGELOG.md](CHANGELOG.md) | 変更履歴 |
 | [CLAUDE.md](CLAUDE.md) | PM エージェントの役割定義とワークフロー |

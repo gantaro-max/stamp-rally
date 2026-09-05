@@ -17,7 +17,7 @@
 | QRコード生成 | `qrcode` crate（部屋ごとのQR画像を生成） |
 | スタンプカード画像生成 | `image` + `imageproc` + `ab_glyph`（部屋名テキストを焼き込んだPNGを動的生成。同梱フォントはNoto Sans JP、23節） |
 | ビルド | Cargo |
-| ホスティング | Koyeb（詳細は18節） |
+| ホスティング | Render（詳細は18節） |
 
 ### MysteryBot（Java）との対応
 
@@ -217,7 +217,7 @@ MysteryBotの `team_groups` に相当する概念（`events`）は今回1レコ�
 
 - 「開始」送信後、名前（個人戦）／チーム名（チーム戦）の入力を待つ「登録待ち」状態が必要になるが、`players` 行は名前確定まで作成しない（`player_name` はNOT NULLのため）
 - **`pending_registrations` テーブルにDB永続化する**（[docs/database.md](database.md)参照）
-  - 従来はアプリ内メモリ（`AppState.pending_registrations: Arc<Mutex<HashSet<String>>>`）で保持する方針だったが、Koyeb無料枠（Ecoインスタンス）は最小インスタンス数を0に固定できず、アイドル時にインスタンス数0へスケールダウンしうることが実際のデプロイ作業で判明した（18節）。メモリ保持のままだと、参加者が「開始」を送ってから名前を入力するまでの間にインスタンスが再起動すると登録待ち状態が失われ、名前入力が正しく処理されない実害があるため、DB永続化に方針を変更した
+  - 従来はアプリ内メモリ（`AppState.pending_registrations: Arc<Mutex<HashSet<String>>>`）で保持する方針だったが、無料枠のホスティングでは常時起動が保証されないことが実際のデプロイ作業で判明した（Render無料枠は約15分アクセスがないとスリープする。移行を検証したKoyeb無料枠も最小インスタンス数を0に固定できずスケールダウンする。18節）。メモリ保持のままだと、参加者が「開始」を送ってから名前を入力するまでの間にインスタンスが再起動すると登録待ち状態が失われ、名前入力が正しく処理されない実害があるため、DB永続化に方針を変更した
   - 実装: `pending_registration_repository`（`line_user_id` + `event_id` をキーに存在確認・追加・削除を行う）。「開始」受信時に挿入、名前受信で消費（登録処理後に削除）、「リセット」受信時にも削除する
 - 将来複数イベント運用に拡張する場合はこの節の設計を見直す（今回は `events` が1行のみのため、どのイベントの登録待ちかを気にする必要がない）
 
@@ -302,7 +302,7 @@ MysteryBotの `team_groups` に相当する概念（`events`）は今回1レコ�
 |:--|:--|:--|
 | `LINE_CHANNEL_SECRET` | Webhook署名検証用のチャネルシークレット | `DATABASE_URL`と同様、エラー出力してプロセス終了 |
 | `LINE_CHANNEL_ACCESS_TOKEN` | Messaging API呼び出し用のアクセストークン | 同上 |
-| `PUBLIC_BASE_URL` | 画像URL等を組み立てる際に前置する公開ベースURL（末尾スラッシュなし、例 `https://xxxx.koyeb.app`） | 同上 |
+| `PUBLIC_BASE_URL` | 画像URL等を組み立てる際に前置する公開ベースURL（末尾スラッシュなし、例 `https://xxxx.onrender.com`） | 同上 |
 | `LIFF_ID` | LIFFページで `liff.init({ liffId })` に渡すLIFF ID（15節） | 同上（Slice Bから必須化） |
 | `LINE_LOGIN_CHANNEL_ID` | IDトークン検証エンドポイントに渡す `client_id`（LIFFアプリが属するチャネルのID。15節） | 同上（Slice Bで追加） |
 | `LINE_ADD_FRIEND_URL` | LINE公式アカウントマネージャーで発行される「友だち追加URL」（例 `https://lin.ee/xxxxx`）。ダッシュボードの友だち追加QRコード（22節）に使う | 未設定でもエラーにせず起動を継続する（他のLINE関連変数と異なりオプション項目。未設定時はダッシュボードのQRコード表示を省略する） |
@@ -379,19 +379,25 @@ MysteryBotの `team_groups` に相当する概念（`events`）は今回1レコ�
 
 ---
 
-## 18. デプロイ構成（Koyeb）
+## 18. デプロイ構成（Render）
+
+### ホスティング先: Koyebを検証したうえでRenderを継続採用
+
+- 本番はRenderの無料枠（Web Service、Dockerランタイム）で稼働している。過去にKoyeb（無料枠のEcoインスタンス）への移行を設計・検証し、実際にデプロイして挙動を確認した（#12・#15）が、**移行はせずRenderでの運用を継続する判断とした**
+- 判断の理由は、両者の制約が本質的に同じだったこと。Koyebの無料枠は最小インスタンス数を0に固定できずアイドル時にインスタンス数0へスケールダウンし、Renderの無料枠も一定時間（約15分）アクセスがないとインスタンスがスリープして次のアクセスで起動する（コールドスタート）。どちらも「常時起動は保証されない」点は変わらず、移行で得られる利点が対象規模（1建物・1イベント運用）に見合わなかった
+- したがって**「プロセスが落ちうる前提で状態を設計する」という下記の方針は、ホスティング先によらず維持している**（9節・[docs/requirements.md](requirements.md)4節）
 
 ### ビルド方式: 本番専用Dockerfile（マルチステージビルド）
 
-- `.devcontainer/Dockerfile` はVS Code Dev Containers向け（`sqlx-cli`・clippy等を含む開発用の大きめイメージ）であり、本番デプロイには使わない。Koyebの無料枠インスタンス（リソース制約がある）に適したイメージにするため、リポジトリルートに**本番専用の`Dockerfile`**をマルチステージビルドで実装済み（#12）
+- `.devcontainer/Dockerfile` はVS Code Dev Containers向け（`sqlx-cli`・clippy等を含む開発用の大きめイメージ）であり、本番デプロイには使わない。無料枠インスタンス（リソース制約がある）に適したイメージにするため、リポジトリルートに**本番専用の`Dockerfile`**をマルチステージビルドで実装済み（#12）
   - ビルドステージ: `rust:1-bookworm`で`cargo build --release --locked`（`--locked`は`Cargo.lock`との不整合による意図しない依存関係更新を防止する。`SECURITY.md`「依存関係・再現性」の方針に対応）。`assets/fonts/`（スタンプカード用フォント、23節）はビルドステージでのみ必要（`include_bytes!`でバイナリに埋め込まれる）ため、`COPY assets ./assets`をビルドステージに追加する
   - 実行ステージ: `debian:bookworm-slim`に、ビルドステージで生成したバイナリと`ca-certificates`（`reqwest`のTLS通信に必要）のみをコピーする。ソースコード・`target/`の中間成果物・`assets/`は実行イメージに含めない（フォントはバイナリに埋め込み済みのため実行時に別途必要ない）。非rootユーザー（`appuser`）でアプリケーションを起動する（多層防御）
-- Koyebの当該Webサービスに、このDockerfileを使ってビルド・デプロイするよう設定する（Koyebのgit連携でリポジトリを指定し、Dockerfileベースのビルドを選択する）
-- ヘルスチェックパス: `/health`（Koyebのヘルスチェックに登録。認証不要・DB非依存のエンドポイントなので疎通確認に適する）
+- RenderのWeb Serviceに、このDockerfileを使ってビルド・デプロイするよう設定する（git連携でリポジトリを指定し、ランタイムとしてDockerを選択する）
+- ヘルスチェックパス: `/health`（RenderのHealth Check Pathに登録。認証不要・DB非依存のエンドポイントなので疎通確認に適する）
 
 ### リッスンポート: `PORT` 環境変数を読む
 
-- Koyeb（および多くのPaaS）は、動的に割り当てた/設定したポート番号を`PORT`環境変数でアプリに伝える方式を採ることが多い。`main.rs`の`resolve_port`関数が`PORT`環境変数をパースし、未設定・パース失敗時は8000にフォールバックする形で実装済み（#12）。バインド処理（`SocketAddr::from(([0, 0, 0, 0], port))`）もこの値を使う
+- Render（および多くのPaaS）は、リッスンすべきポート番号を`PORT`環境変数でアプリに伝える。`main.rs`の`resolve_port`関数が`PORT`環境変数をパースし、未設定・パース失敗時は8000にフォールバックする形で実装済み（#12）。バインド処理（`SocketAddr::from(([0, 0, 0, 0], port))`）もこの値を使う。特定のPaaSに依存しない実装であり、この点はホスティング先を変えても影響を受けない
 
 ### 本番DB: TiDB Serverless
 
@@ -400,29 +406,29 @@ MysteryBotの `team_groups` に相当する概念（`events`）は今回1レコ�
 
 ### 環境変数
 
-Koyebの Environment Variables（Secrets）に以下を設定する。値はKoyebダッシュボードから個別に入力し、リポジトリには含めない。
+RenderのEnvironment Variablesに以下を設定する。値はRenderダッシュボードから個別に入力し、リポジトリには含めない。
 
 | 変数 | 本番での値の目安 |
 |:--|:--|
 | `DATABASE_URL` | TiDB Serverlessの接続文字列（`stamprally`専用データベース・専用ユーザー） |
 | `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` | LINE Developersコンソール（Messaging APIチャネル）で発行 |
-| `PUBLIC_BASE_URL` | KoyebのURL（例 `https://xxxx.koyeb.app`。独自ドメインを割り当てる場合はそちらを設定） |
+| `PUBLIC_BASE_URL` | RenderのURL（例 `https://xxxx.onrender.com`。独自ドメインを割り当てる場合はそちらを設定） |
 | `LIFF_ID` | LINE Developersコンソール、LIFFアプリ登録用に別途作成した**LINEログインチャネル**（Messaging APIチャネルとは別物。Messaging APIチャネルへのLIFF直接追加は廃止されているため）で発行 |
 | `LINE_LOGIN_CHANNEL_ID` | 上記LINEログインチャネル自体のチャネルID（Messaging APIチャネルのIDとは異なる） |
 | `ADMIN_PASSWORD` | 初回起動（`events`が空の時）のみ使用される、管理者ログイン用の初期パスワード |
 
 ### セッションストア・Cookie
 
-- Koyeb無料枠（Ecoインスタンス）は最小インスタンス数を0に固定することができず、アイドル時にインスタンス数0へスケールダウンする（実際のデプロイ作業で確認済み）。**常時起動は保証されない**前提で設計する
-- セッションストアは`MemoryStore`（プロセス内メモリ）のまま運用する。スケールダウン（インスタンス再起動）が発生すると管理者のログインセッションは失われるが、影響は管理者が再ログインするだけで実害は小さいため許容する（管理者アカウントは1つのみ、同時アクセスも稀という前提。[docs/requirements.md](requirements.md)4節）
-- 一方、LINE Botの参加登録の一時状態（「開始」〜名前入力までの間の状態）は、スケールダウンで失われるとプレイヤー体験に実害があるため、**DBに永続化する**方針に変更した（9節を参照）
-- 0-1の範囲を超える複数インスタンスへの水平スケールは引き続き想定しない（対象規模から見合わないため）。0-1の範囲でのスケールtoゼロ・コールドスタートのみを許容する
-- セッションCookieの`Secure`属性は`tower-sessions`のデフォルト（`true`）のまま変更不要（[main.rs](../src/main.rs)で`.with_secure(false)`等の上書きをしていないことを確認済み）。本番はKoyebがTLS終端するHTTPS配信のため問題なく送信される。ローカル開発（`http://localhost`）でも動作に支障はない（`localhost`はブラウザ・主要HTTPクライアントから「trustworthy origin」として扱われ、Secure Cookieの送受信が許可されるため）
+- Renderの無料枠は、一定時間（約15分）アクセスがないとインスタンスがスリープし、次のアクセスで起動する（コールドスタート）。**常時起動は保証されない**前提で設計する。検証したKoyebの無料枠（Ecoインスタンス、アイドル時にインスタンス数0へスケールダウン）も同じ制約であり、この前提はホスティング先の選択によらない
+- セッションストアは`MemoryStore`（プロセス内メモリ）のまま運用する。スリープ・再起動が発生すると管理者のログインセッションは失われるが、影響は管理者が再ログインするだけで実害は小さいため許容する（管理者アカウントは1つのみ、同時アクセスも稀という前提。[docs/requirements.md](requirements.md)4節）
+- 一方、LINE Botの参加登録の一時状態（「開始」〜名前入力までの間の状態）は、スリープ・再起動で失われるとプレイヤー体験に実害があるため、**DBに永続化する**方針に変更した（9節を参照）
+- 複数インスタンスへの水平スケールは想定しない（対象規模から見合わないため）。単一インスタンスのスリープ・コールドスタートのみを許容する
+- セッションCookieの`Secure`属性は`tower-sessions`のデフォルト（`true`）のまま変更不要（[main.rs](../src/main.rs)で`.with_secure(false)`等の上書きをしていないことを確認済み）。本番はRenderがTLS終端するHTTPS配信のため問題なく送信される。ローカル開発（`http://localhost`）でも動作に支障はない（`localhost`はブラウザ・主要HTTPクライアントから「trustworthy origin」として扱われ、Secure Cookieの送受信が許可されるため）
 
-### LINE Developers コンソール側の設定（Koyeb URL確定後に反映）
+### LINE Developers コンソール側の設定（Render URL確定後に反映）
 
-- Messaging APIチャネルのWebhook URLを `https://<Koyebドメイン>/callback` に設定し、Webhookの利用をONにする
-- LIFFアプリのエンドポイントURLを `https://<Koyebドメイン>/liff/checkin` に設定する
+- Messaging APIチャネルのWebhook URLを `https://<Renderドメイン>/callback` に設定し、Webhookの利用をONにする
+- LIFFアプリのエンドポイントURLを `https://<Renderドメイン>/liff/checkin` に設定する
 
 ---
 
