@@ -261,4 +261,13 @@ mod tests {
         assert!((1..=900).contains(&seconds));
     }
 
+    #[sqlx::test]
+    async fn case20_another_sender_can_login_while_one_is_blocked(pool: MySqlPool) {
+        let mut client = LoginClient::new(pool).await;
+        client.fail("198.51.100.9, 203.0.113.1", 5).await;
+        assert_eq!(client.post("192.0.2.99, 203.0.113.1", "admin-secret", true).await.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(client.post("203.0.113.2", "admin-secret", true).await.status(), StatusCode::FOUND);
+        assert_eq!(client.post("203.0.113.1", "admin-secret", true).await.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
 }
