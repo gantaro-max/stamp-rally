@@ -352,7 +352,7 @@ LINE Bot 部分を実際に動かすには、LINE 公式アカウント（Messag
 | [CHANGELOG.md](CHANGELOG.md) | 変更履歴 |
 | [CLAUDE.md](CLAUDE.md) | PM エージェントの役割定義とワークフロー |
 | [AGENTS.md](AGENTS.md) | 実装エージェントのコーディング規約・TDD 手順 |
-| [instructions/done/](instructions/done/) | 全 38 本の実装指示書 |
+| [instructions/done/](instructions/done/) | 全 39 本の実装指示書 |
 
 ---
 
