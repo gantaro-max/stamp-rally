@@ -372,4 +372,6 @@ Participants add the event's LINE Official Account as a friend, receive randomly
 
 Stack: Rust (edition 2024), Axum, Tokio, sqlx (MySQL / TiDB Serverless), Askama, Argon2, LINE Messaging API and LIFF — all API integration written from scratch without an official SDK.
 
-This repository also documents an **AI-agent-divided TDD workflow**: Claude acted as PM (requirements, architecture, implementation specs, multi-agent final review) and never wrote code, while Codex implemented every feature test-first on `feature/*` branches. Of the PRs whose squashed bodies preserve their original commit granularity, 26 of 28 begin with a failing-test commit, and all 38 implementation specs are preserved under [instructions/done/](instructions/done/).
+This repository also documents an **AI-agent-divided TDD workflow**: Claude acted as PM (requirements, architecture, implementation specs, multi-agent final review) and never wrote code, while Codex implemented every feature test-first on `feature/*` branches. Of the PRs whose squashed bodies preserve their original commit granularity, Every PR whose squashed body preserves its original commit granularity begins with a
+failing-test commit, except two: initial setup (#2) and a non-behavioral change (#11).
+, and all 39 implementation specs are preserved under [instructions/done/](instructions/done/).
