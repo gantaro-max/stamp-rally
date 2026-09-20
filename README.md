@@ -90,7 +90,7 @@ Rust（Axum）製のフルスタック Web アプリケーション。LINE Messa
 | 開発環境 | Dev Container（Rust + MySQL） |
 | 本番環境 | Render（マルチステージ Dockerfile） |
 
-外部 SDK に頼らず、LINE Messaging API クライアント・Webhook 署名検証・Flex Message の組み立て・LIFF ID トークン検証をすべて自前で実装している。
+公式 SDK を使わない構成で、LINE Messaging API クライアント・Webhook 署名検証・Flex Message の組み立て・LIFF ID トークン検証を実装している。
 
 ---
 
@@ -370,6 +370,6 @@ A stamp rally (checkpoint tour) application for indoor events, built as a LINE B
 
 Participants add the event's LINE Official Account as a friend, receive randomly assigned rooms as Flex Messages, and collect stamps by scanning staff-held QR codes through LIFF. Stamp card images are rendered server-side on every request. Organizers manage checkpoints, QR codes, event settings and a live clear-time ranking through an Askama + Bootstrap admin panel.
 
-Stack: Rust (edition 2024), Axum, Tokio, sqlx (MySQL / TiDB Serverless), Askama, Argon2, LINE Messaging API and LIFF — all API integration written from scratch without an official SDK.
+Stack: Rust (edition 2024), Axum, Tokio, sqlx (MySQL / TiDB Serverless), Askama, Argon2, LINE Messaging API and LIFF — all API integration implemented without an official SDK
 
 This repository also documents an **AI-agent-divided TDD workflow**: Claude acted as PM (requirements, architecture, implementation specs, multi-agent final review) and never wrote code, while Codex implemented every feature test-first on `feature/*` branches. Every PR whose squashed body preserves its original commit granularity begins with a failing-test commit, except two: initial setup (#2) and a non-behavioral change (#11); all 39 implementation specs are preserved under [instructions/done/](instructions/done/).
